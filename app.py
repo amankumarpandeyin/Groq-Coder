@@ -480,11 +480,17 @@ css = """
   border: 2px dashed #6A57FF !important;
   background: transparent !important;
   transition: all 0.3s ease;
+  cursor: pointer !important;
+  pointer-events: auto !important;
 }
 
 .new-project-btn:hover {
   background: #f0edff !important;
   border-color: #5243d9 !important;
+}
+
+.new-project-btn:active {
+  transform: scale(0.98);
 }
 """
 
