@@ -5,19 +5,12 @@ import modelscope_studio.components.antd as antd
 import modelscope_studio.components.base as ms
 import modelscope_studio.components.pro as pro
 from groq import Groq
-
-# ============================================
-# CONFIGURATION SECTION
-# ============================================
-
-# Groq API Configuration
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+if not GROQ_API_KEY:
+    raise ValueError("GROQ_API_KEY environment variable is not set")
+
 client = Groq(api_key=GROQ_API_KEY)
-
-# Model Configuration
 MODEL = "openai/gpt-oss-120b"
-
-# Available Models for Selection
 AVAILABLE_MODELS = [
     {
         "name": "GPT OSS 120B",
@@ -44,8 +37,6 @@ AVAILABLE_MODELS = [
         "max_tokens": 4096
     }
 ]
-
-# System Prompt
 SYSTEM_PROMPT = """You are an expert on frontend design, you will always respond to web design tasks.
 Your task is to create a website according to the user's request using either native HTML or React framework.
 When choosing implementation framework, you should follow these rules:
@@ -101,8 +92,6 @@ You can use these installed libraries if required.
 - **three, @react-three/fiber, @react-three/drei**: 3D graphics library with React renderer and helpers. Import as `import { Canvas } from "@react-three/fiber"` and `import { OrbitControls } from "@react-three/drei"`. Use for 3D scenes, visualizations, and immersive experiences.
 
 Remember to only return code for the App.jsx file and nothing else. The resulting application should be visually impressive, highly functional, and something users would be proud to showcase."""
-
-# Examples
 EXAMPLES = [
     {
         "title": "Bouncing ball",
@@ -121,8 +110,6 @@ EXAMPLES = [
         "description": "I want a TODO list that allows me to add tasks, delete tasks, and I would like the overall color theme to be purple."
     },
 ]
-
-# AI Suggestions for Enhancement
 AI_SUGGESTIONS = [
     {
         "icon": "🎨",
@@ -162,7 +149,6 @@ AI_SUGGESTIONS = [
     }
 ]
 
-# UI Configuration
 DEFAULT_LOCALE = 'en_US'
 
 DEFAULT_THEME = {
@@ -190,16 +176,14 @@ react_imports = {
     "react-dom/": "https://esm.sh/react-dom@^19.0.0/"
 }
 
-# ============================================
-# GRADIO EVENTS CLASS
-# ============================================
-
 class GradioEvents:
 
     @staticmethod
     def generate_code(input_value, system_prompt_input_value, state_value, selected_model):
-
+        """Generate code with improved error handling and state management"""
+        
         def get_generated_files(text):
+            """Extract code blocks from response"""
             patterns = {
                 'html': r'```html\n(.+?)\n```',
                 'jsx': r'```jsx\n(.+?)\n```',
@@ -216,32 +200,40 @@ class GradioEvents:
             if len(result) == 0:
                 result["index.html"] = text.strip()
             return result
+        if not input_value or input_value.strip() == '':
+            yield {
+                output: gr.update(value="⚠️ Please enter a description of what you want to create."),
+                output_loading: gr.update(spinning=False),
+                state_tab: gr.update(active_key="empty"),
+                suggestions_container: gr.update(visible=False),
+                download_btn: gr.update(disabled=True)
+            }
+            return
 
         yield {
             output_loading: gr.update(spinning=True),
             state_tab: gr.update(active_key="loading"),
             output: gr.update(value=None),
-            suggestions_container: gr.update(visible=False)
+            suggestions_container: gr.update(visible=False),
+            download_btn: gr.update(disabled=True)
         }
 
-        if input_value is None:
-            input_value = ''
-
+      
         messages = [{
             'role': "system",
-            "content": SYSTEM_PROMPT
+            "content": system_prompt_input_value or SYSTEM_PROMPT
         }] + state_value["history"]
 
-        messages.append({'role': "user", 'content': input_value})
+        messages.append({'role': "user", 'content': input_value.strip()})
 
-        # Get max tokens for selected model
+   
         max_tokens = 8192
         for model in AVAILABLE_MODELS:
             if model["value"] == selected_model:
                 max_tokens = model["max_tokens"]
                 break
 
-        # Use Groq API with streaming
+       
         try:
             completion = client.chat.completions.create(
                 model=selected_model,
@@ -258,26 +250,31 @@ class GradioEvents:
                 if chunk.choices[0].delta.content:
                     content = chunk.choices[0].delta.content
                     response += content
+                    
+                 
                     yield {
                         output: gr.update(value=response),
                         output_loading: gr.update(spinning=False),
                     }
                 
                 if chunk.choices[0].finish_reason == 'stop':
+               
                     state_value["history"] = messages + [{
                         'role': "assistant",
                         'content': response
                     }]
                     
-                    # Extract generated files
+             
                     generated_files = get_generated_files(response)
                     react_code = generated_files.get("index.tsx") or generated_files.get("index.jsx")
                     html_code = generated_files.get("index.html")
                     
-                    # Completed
+                    code_to_download = react_code or html_code
+                    
+         
                     yield {
                         output: gr.update(value=response),
-                        download_content: gr.update(value=react_code or html_code),
+                        download_content: gr.update(value=code_to_download),
                         state_tab: gr.update(active_key="render"),
                         output_loading: gr.update(spinning=False),
                         sandbox: gr.update(
@@ -293,17 +290,33 @@ export default Demo
                             } if react_code else {"./index.html": html_code}
                         ),
                         state: gr.update(value=state_value),
-                        suggestions_container: gr.update(visible=True)
+                        suggestions_container: gr.update(visible=True),
+                        download_btn: gr.update(disabled=False if code_to_download else True)
                     }
                     
         except Exception as e:
-            # Handle errors
-            error_message = f"Error generating code: {str(e)}"
+            # comprehensive error handling..
+            error_type = type(e).__name__
+            error_message = str(e)
+            
+            # user-friendly error messages
+            if "authentication" in error_message.lower() or "api key" in error_message.lower():
+                friendly_message = "🔐 **Authentication Error**: Invalid API key. Please check your Groq API key."
+            elif "rate limit" in error_message.lower():
+                friendly_message = "⏱️ **Rate Limit**: Too many requests. Please wait a moment and try again."
+            elif "timeout" in error_message.lower():
+                friendly_message = "⏰ **Timeout Error**: The request took too long. Please try again with a simpler prompt."
+            elif "model" in error_message.lower():
+                friendly_message = f"🤖 **Model Error**: Issue with model '{selected_model}'. Try selecting a different model."
+            else:
+                friendly_message = f"❌ **Error ({error_type})**: {error_message}"
+            
             yield {
-                output: gr.update(value=error_message),
+                output: gr.update(value=friendly_message),
                 output_loading: gr.update(spinning=False),
-                state_tab: gr.update(active_key="empty"),
-                suggestions_container: gr.update(visible=False)
+                state_tab: gr.update(active_key="loading"),
+                suggestions_container: gr.update(visible=False),
+                download_btn: gr.update(disabled=True)
             }
 
     @staticmethod
@@ -311,12 +324,15 @@ export default Demo
         """Update model info text when model is changed"""
         for model in AVAILABLE_MODELS:
             if model["value"] == selected_model:
-                return gr.update(value=f"{model['description']} | Max tokens: {model['max_tokens']}")
+                return gr.update(value=f"📊 {model['description']} | Max tokens: {model['max_tokens']}")
         return gr.update(value=f"Powered by {selected_model}")
 
     @staticmethod
-    def apply_suggestion(suggestion_text, input_field):
-        """Apply AI suggestion to input field"""
+    def apply_suggestion(suggestion_text, current_input):
+        """Apply AI suggestion to input field with smooth UX"""
+        if current_input and current_input.strip():
+            combined = f"{current_input.strip()}\n\n{suggestion_text}"
+            return gr.update(value=combined)
         return gr.update(value=suggestion_text)
 
     @staticmethod
@@ -342,26 +358,30 @@ export default Demo
     @staticmethod
     def update_system_prompt(system_prompt_input_value, state_value):
         state_value["system_prompt"] = system_prompt_input_value
+        gr.Info("System prompt updated successfully!")
         return gr.update(value=state_value)
 
     @staticmethod
     def reset_system_prompt(state_value):
-        return gr.update(value=state_value["system_prompt"])
+        return gr.update(value=state_value.get("system_prompt", SYSTEM_PROMPT))
 
     @staticmethod
-    def render_history(statue_value):
-        return gr.update(value=statue_value["history"])
+    def render_history(state_value):
+        return gr.update(value=state_value["history"])
 
     @staticmethod
     def clear_history(state_value):
-        gr.Success("History Cleared.")
         state_value["history"] = []
+        gr.Success("History cleared successfully!")
         return gr.update(value=state_value)
-
-
-# ============================================
-# CSS AND THEME
-# ============================================
+    
+    @staticmethod
+    def validate_and_prepare_input(input_value):
+        """Validate input before submission"""
+        if not input_value or len(input_value.strip()) < 10:
+            gr.Warning("Please provide a more detailed description (at least 10 characters).")
+            return False
+        return True
 
 css = """
 #coder-artifacts .output-empty,.output-loading {
@@ -403,17 +423,24 @@ css = """
   padding: 20px;
   margin-top: 16px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  transition: all 0.3s ease;
 }
 
 .suggestion-card {
   background: white;
   transition: all 0.3s ease;
   cursor: pointer;
+  border-radius: 8px;
 }
 
 .suggestion-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+}
+
+/* Smooth transitions */
+.ms-gr-ant-card, .ms-gr-ant-spin {
+  transition: all 0.3s ease;
 }
 
 /* Hide global Gradio footer/branding */
@@ -423,17 +450,24 @@ css = """
 .gradio-container .logo {
     display: none !important;
 }
+
+/* Loading animation enhancement */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.output-loading {
+  animation: pulse 2s ease-in-out infinite;
+}
 """
 
 theme = gr.themes.Default()
 
-# ============================================
-# GRADIO INTERFACE
-# ============================================
 
-with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:
+with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
     # Global State
-    state = gr.State({"system_prompt": "", "history": []})
+    state = gr.State({"system_prompt": SYSTEM_PROMPT, "history": []})
     
     with ms.Application(elem_id="coder-artifacts") as app:
         with antd.ConfigProvider(theme=DEFAULT_THEME, locale=DEFAULT_LOCALE):
@@ -442,7 +476,7 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:
                 with antd.Row(gutter=[32, 12],
                               elem_style=dict(marginTop=20),
                               align="stretch"):
-                    # Left Column
+            
                     with antd.Col(span=24, md=8):
                         with antd.Flex(vertical=True, gap="middle", wrap=True):
                             with antd.Flex(justify="center",
@@ -450,7 +484,7 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:
                                            vertical=True,
                                            gap="middle"):
                                 antd.Image(
-                                    "https://i.ibb.co/fYRyJNq0/Screenshot-from-2025-11-04-08-53-02.png",
+                                    "https://i.ibb.co/fYRyJNq/Screenshot-from-2025-11-04-08-53-02.png",
                                     width=200,
                                     height=200,
                                     preview=False)
@@ -459,7 +493,7 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:
                                     level=1,
                                     elem_style=dict(fontSize=24))
                                 
-                            # Model Selector
+                      
                             with antd.Card(
                                 title="🤖 Select AI Model",
                                 size="small",
@@ -477,30 +511,33 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:
                                     ]
                                 )
                                 selected_model_info = antd.Typography.Text(
-                                    f"Powered by {MODEL}",
+                                    f"📊 Powered by {MODEL}",
                                     type="secondary",
                                     elem_style=dict(fontSize=12, display="block", marginTop=8))
                                 
-                            # Input
+                            
                             input = antd.Input.Textarea(
                                 size="large",
                                 allow_clear=True,
                                 auto_size=dict(minRows=2, maxRows=6),
-                                placeholder=
-                                "Describe the web application you want to create",
+                                placeholder="Describe the web application you want to create (be specific for best results)",
                                 elem_id="input-container")
-                            # Input Notes
-                            with antd.Flex(justify="space-between"):
+                            
+                      
+                            with antd.Flex(justify="space-between", gap="small"):
                                 antd.Typography.Text(
-                                    "Note: The model supports multi-round dialogue, you can make the model generate interfaces by returning React or HTML code.",
+                                    "💡 Tip: The model supports multi-turn conversations. You can refine your design iteratively!",
                                     strong=True,
-                                    type="warning")
+                                    type="warning",
+                                    elem_style=dict(fontSize=12))
 
-                                tour_btn = antd.Button("Usage Tour",
+                                tour_btn = antd.Button("❓ Usage Tour",
                                                        variant="filled",
-                                                       color="default")
-                            # Submit Button
-                            submit_btn = antd.Button("Submit",
+                                                       color="default",
+                                                       size="small")
+                            
+                        
+                            submit_btn = antd.Button("🚀 Generate Code",
                                                      type="primary",
                                                      block=True,
                                                      size="large",
@@ -508,17 +545,21 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:
 
                             antd.Divider("Settings")
 
-                            # Settings Area
+                            
                             with antd.Space(size="small",
                                             wrap=True,
                                             elem_id="settings-area"):
                                 history_btn = antd.Button(
-                                    "📜 History",
+                                    "📜 View History",
                                     type="default",
                                     elem_id="history-btn",
                                 )
-                                cleat_history_btn = antd.Button(
-                                    "🧹 Clear History", danger=True)
+                                clear_history_btn = antd.Button(
+                                    "🧹 Clear History", 
+                                    danger=True)
+                                system_prompt_btn = antd.Button(
+                                    "⚙️ System Prompt",
+                                    type="default")
 
                             antd.Divider("Examples")
 
@@ -534,14 +575,13 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:
                                             description=example['description'])
 
                                     example_card.click(
-                                        fn=GradioEvents.select_example(
-                                            example),
+                                        fn=GradioEvents.select_example(example),
                                         outputs=[input])
 
                     # Right Column
                     with antd.Col(span=24, md=16):
                         with antd.Card(
-                                title="Output",
+                                title="✨ Output Preview",
                                 elem_style=dict(height="100%",
                                                 display="flex",
                                                 flexDirection="column"),
@@ -551,7 +591,7 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:
                             with ms.Slot("extra"):
                                 with ms.Div(elem_id="output-container-extra"):
                                     with antd.Button(
-                                            "Download Code",
+                                            "📥 Download Code",
                                             type="link",
                                             href_target="_blank",
                                             disabled=True,
@@ -561,21 +601,25 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:
                                     download_content = gr.Text(visible=False)
 
                                     view_code_btn = antd.Button(
-                                        "🧑‍💻 View Code", type="primary")
+                                        " View Code", 
+                                        type="primary")
                             
-                            # Output Content
+                        
                             with antd.Tabs(
                                     elem_style=dict(height="100%"),
                                     active_key="empty",
                                     render_tab_bar="() => null") as state_tab:
                                 with antd.Tabs.Item(key="empty"):
-                                    antd.Empty(
-                                        description=
-                                        "Enter your request to generate code",
-                                        elem_classes="output-empty")
+                                    with ms.Div(elem_classes="output-empty"):
+                                        antd.Empty(
+                                            description="✍️ Enter your request above to generate stunning web applications",
+                                            elem_style=dict(marginBottom=16))
+                                        antd.Typography.Text(
+                                            "Get started by describing what you want to build!",
+                                            type="secondary")
                                 with antd.Tabs.Item(key="loading"):
                                     with antd.Spin(
-                                            tip="Generating code...",
+                                            tip="🎨 Creating your masterpiece...",
                                             size="large",
                                             elem_classes="output-loading"):
                                         ms.Div()
@@ -586,17 +630,18 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:
                                         template="html",
                                     )
                         
-                        # AI Suggestions Panel
+                       
                         with ms.Div(visible=False) as suggestions_container:
                             with antd.Card(
-                                title="✨ AI Suggestions",
+                                title="✨ AI Enhancement Suggestions",
                                 elem_classes="suggestions-panel",
                                 elem_style=dict(marginTop=16)):
                                 antd.Typography.Text(
-                                    "Quick actions to enhance your design:",
+                                    "💫 Click any suggestion below to enhance your design:",
                                     elem_style=dict(color="white", 
                                                    marginBottom=12,
-                                                   display="block"))
+                                                   display="block",
+                                                   fontSize=14))
                                 
                                 with antd.Row(gutter=[16, 16]):
                                     for suggestion in AI_SUGGESTIONS:
@@ -611,24 +656,28 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:
                                                         elem_style=dict(fontSize=24))
                                                     antd.Typography.Text(
                                                         suggestion["title"],
-                                                        strong=True)
+                                                        strong=True,
+                                                        elem_style=dict(fontSize=14))
                                                     antd.Typography.Text(
                                                         suggestion["description"],
                                                         type="secondary",
                                                         elem_style=dict(fontSize=12))
                                             
-                                            # Click event for each suggestion
+                                            
                                             suggestion_card.click(
                                                 fn=GradioEvents.apply_suggestion,
-                                                inputs=[gr.State(suggestion["prompt"])],
+                                                inputs=[gr.State(suggestion["prompt"]), input],
                                                 outputs=[input])
 
-                    # Modals and Drawers
+                 
                     with antd.Modal(open=False,
-                                    title="System Prompt",
+                                    title="⚙️ System Prompt Configuration",
                                     width="800px") as system_prompt_modal:
+                        antd.Typography.Paragraph(
+                            "Customize the AI's behavior by modifying the system prompt:",
+                            elem_style=dict(marginBottom=12))
                         system_prompt_input = antd.Input.Textarea(
-                            value="",
+                            value=SYSTEM_PROMPT,
                             size="large",
                             placeholder="Enter your system prompt here",
                             allow_clear=True,
@@ -636,7 +685,7 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:
 
                     with antd.Drawer(
                             open=False,
-                            title="Output Code",
+                            title="👨‍💻 Generated Code",
                             placement="right",
                             get_container=
                             "() => document.querySelector('.gradio-container')",
@@ -651,121 +700,151 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:
 
                     with antd.Drawer(
                             open=False,
-                            title="Chat History",
+                            title="📜 Conversation History",
                             placement="left",
                             get_container=
                             "() => document.querySelector('.gradio-container')",
                             width="750px") as history_drawer:
+                        antd.Typography.Paragraph(
+                            "Review your conversation history with the AI:",
+                            elem_style=dict(marginBottom=12))
                         history_output = gr.Chatbot(
                             show_label=False,
                             type="messages",
                             height='100%',
                             elem_classes="history_chatbot")
                     
-                    # Tour
+                   
                     with antd.Tour(open=False) as usage_tour:
                         antd.Tour.Step(
-                            title="Step 1",
+                            title="Step 1: Describe Your Idea",
                             description=
-                            "Describe the web application you want to create.",
+                            "Describe the web application you want to create. Be specific for best results!",
                             get_target=
                             "() => document.querySelector('#input-container')")
                         antd.Tour.Step(
-                            title="Step 2",
-                            description="Click the submit button.",
+                            title="Step 2: Generate",
+                            description="Click the 'Generate Code' button to create your application.",
                             get_target=
                             "() => document.querySelector('#submit-btn')")
                         antd.Tour.Step(
-                            title="Step 3",
-                            description="Wait for the result.",
+                            title="Step 3: Preview",
+                            description="Watch as your application is generated and rendered in real-time.",
                             get_target=
                             "() => document.querySelector('#output-container')"
                         )
                         antd.Tour.Step(
-                            title="Step 4",
+                            title="Step 4: Download or Refine",
                             description=
-                            "Download the generated HTML here or view the code.",
+                            "Download the generated code or view it in detail. You can also use AI suggestions to enhance your design!",
                             get_target=
                             "() => document.querySelector('#output-container-extra')"
                         )
                         antd.Tour.Step(
-                            title="Additional Settings",
-                            description="You can change chat history here.",
+                            title="Step 5: Manage Settings",
+                            description="View chat history, clear conversations, or customize the system prompt here.",
                             get_target=
                             "() => document.querySelector('#settings-area')")
     
-    # Event Handlers
-    
-    # Model selector change event
+
     model_selector.change(
         fn=GradioEvents.update_model_info,
         inputs=[model_selector],
         outputs=[selected_model_info]
     )
-    
     gr.on(fn=GradioEvents.close_modal,
           triggers=[usage_tour.close, usage_tour.finish],
           outputs=[usage_tour])
-    tour_btn.click(fn=GradioEvents.open_modal, outputs=[usage_tour])
+    
+    tour_btn.click(
+        fn=GradioEvents.open_modal, 
+        outputs=[usage_tour])
+    system_prompt_btn.click(
+        fn=GradioEvents.open_modal,
+        outputs=[system_prompt_modal])
+    
+    system_prompt_modal.ok(
+        fn=GradioEvents.update_system_prompt,
+        inputs=[system_prompt_input, state],
+        outputs=[state]
+    ).then(
+        fn=GradioEvents.close_modal,
+        outputs=[system_prompt_modal])
 
-    system_prompt_modal.ok(GradioEvents.update_system_prompt,
-                           inputs=[system_prompt_input, state],
-                           outputs=[state]).then(fn=GradioEvents.close_modal,
-                                                 outputs=[system_prompt_modal])
-
-    system_prompt_modal.cancel(GradioEvents.close_modal,
-                               outputs=[system_prompt_modal]).then(
-                                   fn=GradioEvents.reset_system_prompt,
-                                   inputs=[state],
-                                   outputs=[system_prompt_input])
-    output_code_drawer.close(fn=GradioEvents.close_modal,
-                             outputs=[output_code_drawer])
-    cleat_history_btn.click(fn=GradioEvents.clear_history,
-                            inputs=[state],
-                            outputs=[state])
-    history_btn.click(fn=GradioEvents.open_modal,
-                      outputs=[history_drawer
-                               ]).then(fn=GradioEvents.render_history,
-                                       inputs=[state],
-                                       outputs=[history_output])
-    history_drawer.close(fn=GradioEvents.close_modal, outputs=[history_drawer])
-
-    download_btn.click(fn=None,
-                       inputs=[download_content],
-                       js="""(content) => {
-        const blob = new Blob([content], { type: 'text/plain' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = 'output.txt'
-        a.click()
-}""")
-    view_code_btn.click(fn=GradioEvents.open_modal,
-                        outputs=[output_code_drawer])
+    system_prompt_modal.cancel(
+        fn=GradioEvents.close_modal,
+        outputs=[system_prompt_modal]
+    ).then(
+        fn=GradioEvents.reset_system_prompt,
+        inputs=[state],
+        outputs=[system_prompt_input])
+    output_code_drawer.close(
+        fn=GradioEvents.close_modal,
+        outputs=[output_code_drawer])
+    
+    view_code_btn.click(
+        fn=GradioEvents.open_modal,
+        outputs=[output_code_drawer])
+    
+    clear_history_btn.click(
+        fn=GradioEvents.clear_history,
+        inputs=[state],
+        outputs=[state])
+    
+    history_btn.click(
+        fn=GradioEvents.open_modal,
+        outputs=[history_drawer]
+    ).then(
+        fn=GradioEvents.render_history,
+        inputs=[state],
+        outputs=[history_output])
+    
+    history_drawer.close(
+        fn=GradioEvents.close_modal, 
+        outputs=[history_drawer])
+    download_btn.click(
+        fn=None,
+        inputs=[download_content],
+        js="""(content) => {
+            const blob = new Blob([content], { type: 'text/plain' })
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = 'generated-code.txt'
+            a.click()
+            URL.revokeObjectURL(url)
+        }""")
     
     submit_btn.click(
         fn=GradioEvents.open_modal,
         outputs=[output_code_drawer],
-    ).then(fn=GradioEvents.disable_btns([submit_btn, download_btn]),
-           outputs=[submit_btn, download_btn]).then(
-               fn=GradioEvents.generate_code,
-               inputs=[input, system_prompt_input, state, model_selector],
-               outputs=[
-                   output, state_tab, sandbox, download_content,
-                   output_loading, state, suggestions_container
-               ]).then(fn=GradioEvents.enable_btns([submit_btn, download_btn]),
-                       outputs=[submit_btn, download_btn
-                                ]).then(fn=GradioEvents.close_modal,
-                                        outputs=[output_code_drawer])
+    ).then(
+        fn=GradioEvents.disable_btns([submit_btn, download_btn]),
+        outputs=[submit_btn, download_btn]
+    ).then(
+        fn=GradioEvents.generate_code,
+        inputs=[input, system_prompt_input, state, model_selector],
+        outputs=[
+            output, state_tab, sandbox, download_content,
+            output_loading, state, suggestions_container, download_btn  #boner
+        ]
+    ).then(
+        fn=GradioEvents.enable_btns([submit_btn]),
+        outputs=[submit_btn]
+    ).then(
+        fn=GradioEvents.close_modal,
+        outputs=[output_code_drawer])
 
 if __name__ == "__main__":
     import os
     port = int(os.environ.get('PORT', 7860))
     
-    demo.queue(default_concurrency_limit=100,
-               max_size=100).launch(
-                   server_name="0.0.0.0",
-                   server_port=port,
-                   ssr_mode=False,
-                   max_threads=100
-               )
+    demo.queue(
+        default_concurrency_limit=100,
+        max_size=100
+    ).launch(
+        server_name="0.0.0.0",
+        server_port=port,
+        ssr_mode=False,
+        max_threads=100
+    )
