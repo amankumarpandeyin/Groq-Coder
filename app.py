@@ -4,7 +4,7 @@ import modelscope_studio.components.antd as antd
 import modelscope_studio.components.base as ms
 import modelscope_studio.components.pro as pro
 from groq import Groq
-from config import GROQ_API_KEY, MODEL, SYSTEM_PROMPT, EXAMPLES, DEFAULT_LOCALE, DEFAULT_THEME
+from config import GROQ_API_KEY, MODEL, SYSTEM_PROMPT, EXAMPLES, DEFAULT_LOCALE, DEFAULT_THEME, AI_SUGGESTIONS
 client = Groq(api_key=GROQ_API_KEY)
 
 react_imports = {
@@ -52,7 +52,8 @@ class GradioEvents:
         yield {
             output_loading: gr.update(spinning=True),
             state_tab: gr.update(active_key="loading"),
-            output: gr.update(value=None)
+            output: gr.update(value=None),
+            suggestions_container: gr.update(visible=False)
         }
 
         if input_value is None:
@@ -116,7 +117,8 @@ export default Demo
                                 "./demo.tsx": react_code
                             } if react_code else {"./index.html": html_code}
                         ),
-                        state: gr.update(value=state_value)
+                        state: gr.update(value=state_value),
+                        suggestions_container: gr.update(visible=True)
                     }
                     
         except Exception as e:
@@ -125,8 +127,37 @@ export default Demo
             yield {
                 output: gr.update(value=error_message),
                 output_loading: gr.update(spinning=False),
-                state_tab: gr.update(active_key="empty")
+                state_tab: gr.update(active_key="empty"),
+                suggestions_container: gr.update(visible=False)
             }
+
+    @staticmethod
+    def apply_suggestion(suggestion_text, input_field):
+        """Apply AI suggestion to input field"""
+        return gr.update(value=suggestion_text)
+
+    @staticmethod
+    def change_device_preview(device_type):
+        """Change preview dimensions based on device type"""
+        device_dimensions = {
+            "desktop": {"width": "100%", "height": "100%"},
+            "tablet": {"width": "768px", "height": "1024px"},
+            "mobile": {"width": "375px", "height": "667px"}
+        }
+        
+        dims = device_dimensions.get(device_type, device_dimensions["desktop"])
+        
+        # Return CSS style update for the sandbox container
+        return gr.update(
+            elem_style={
+                "maxWidth": dims["width"],
+                "height": dims["height"],
+                "margin": "0 auto" if device_type != "desktop" else "0",
+                "border": "1px solid #e0e0e0" if device_type != "desktop" else "none",
+                "borderRadius": "8px" if device_type != "desktop" else "0",
+                "boxShadow": "0 2px 8px rgba(0,0,0,0.1)" if device_type != "desktop" else "none"
+            }
+        )
 
     @staticmethod
     def select_example(example: dict):
@@ -201,7 +232,43 @@ css = """
   min-height: 100%;
 }
 
-/* NEW: Hide global Gradio footer/branding */
+/* Device Preview Styles */
+.device-preview-container {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  padding: 20px;
+  background: #f5f5f5;
+}
+
+.device-preview-buttons {
+  margin-bottom: 16px;
+}
+
+/* AI Suggestions Panel Styles */
+.suggestions-panel {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px;
+  padding: 20px;
+  margin-top: 16px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.suggestion-card {
+  background: white;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.suggestion-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+}
+
+/* Hide global Gradio footer/branding */
 .gradio-container .footer {
     display: none !important;
 }
@@ -210,14 +277,9 @@ css = """
 }
 """
 
-# NEW: Custom theme to hide Gradio branding (logo, footer, etc.)
-theme = gr.themes.Default().set(
-    logo_display="none",
-    branding_display="none",
-    footer_display="none"
-)
+theme = gr.themes.Default()
 
-with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:  # ADDED: title, theme, css params
+with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:
     # Global State
     state = gr.State({"system_prompt": "", "history": []})
     with ms.Application(elem_id="coder-artifacts") as app:
@@ -328,6 +390,28 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:  # ADDED: titl
 
                                     view_code_btn = antd.Button(
                                         "🧑‍💻 View Code", type="primary")
+                            
+                            # Device Preview Controls
+                            with antd.Flex(gap="small", 
+                                         wrap=True,
+                                         elem_classes="device-preview-buttons",
+                                         justify="center"):
+                                antd.Typography.Text("Device Preview:", 
+                                                    strong=True,
+                                                    elem_style=dict(marginRight=8))
+                                desktop_btn = antd.Button(
+                                    "🖥️ Desktop",
+                                    type="primary",
+                                    size="small")
+                                tablet_btn = antd.Button(
+                                    "📱 Tablet",
+                                    type="default",
+                                    size="small")
+                                mobile_btn = antd.Button(
+                                    "📱 Mobile",
+                                    type="default",
+                                    size="small")
+                            
                             # Output Content
                             with antd.Tabs(
                                     elem_style=dict(height="100%"),
@@ -343,14 +427,51 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:  # ADDED: titl
                                             tip="Generating code...",
                                             size="large",
                                             elem_classes="output-loading"):
-                                        # placeholder
                                         ms.Div()
                                 with antd.Tabs.Item(key="render"):
-                                    sandbox = pro.WebSandbox(
-                                        height="100%",
-                                        elem_classes="output-html",
-                                        template="html",
-                                    )
+                                    with ms.Div(elem_classes="device-preview-container"):
+                                        sandbox = pro.WebSandbox(
+                                            height="100%",
+                                            elem_classes="output-html",
+                                            template="html",
+                                        )
+                        
+                        # AI Suggestions Panel
+                        with ms.Div(visible=False) as suggestions_container:
+                            with antd.Card(
+                                title="✨ AI Suggestions",
+                                elem_classes="suggestions-panel",
+                                elem_style=dict(marginTop=16)):
+                                antd.Typography.Text(
+                                    "Quick actions to enhance your design:",
+                                    elem_style=dict(color="white", 
+                                                   marginBottom=12,
+                                                   display="block"))
+                                
+                                with antd.Row(gutter=[16, 16]):
+                                    for suggestion in AI_SUGGESTIONS:
+                                        with antd.Col(span=24, sm=12, md=8):
+                                            with antd.Card(
+                                                hoverable=True,
+                                                elem_classes="suggestion-card",
+                                                size="small") as suggestion_card:
+                                                with antd.Flex(vertical=True, gap="small"):
+                                                    antd.Typography.Text(
+                                                        suggestion["icon"],
+                                                        elem_style=dict(fontSize=24))
+                                                    antd.Typography.Text(
+                                                        suggestion["title"],
+                                                        strong=True)
+                                                    antd.Typography.Text(
+                                                        suggestion["description"],
+                                                        type="secondary",
+                                                        elem_style=dict(fontSize=12))
+                                            
+                                            # Click event for each suggestion
+                                            suggestion_card.click(
+                                                fn=GradioEvents.apply_suggestion,
+                                                inputs=[gr.State(suggestion["prompt"])],
+                                                outputs=[input])
 
                     # Modals and Drawers
                     with antd.Modal(open=False,
@@ -390,6 +511,7 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:  # ADDED: titl
                             type="messages",
                             height='100%',
                             elem_classes="history_chatbot")
+                    
                     # Tour
                     with antd.Tour(open=False) as usage_tour:
                         antd.Tour.Step(
@@ -421,7 +543,8 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:  # ADDED: titl
                             description="You can change chat history here.",
                             get_target=
                             "() => document.querySelector('#settings-area')")
-    # Event Handler
+    
+    # Event Handlers
     gr.on(fn=GradioEvents.close_modal,
           triggers=[usage_tour.close, usage_tour.finish],
           outputs=[usage_tour])
@@ -461,6 +584,21 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:  # ADDED: titl
 }""")
     view_code_btn.click(fn=GradioEvents.open_modal,
                         outputs=[output_code_drawer])
+    
+    # Device Preview Button Events
+    desktop_btn.click(
+        fn=GradioEvents.change_device_preview,
+        inputs=[gr.State("desktop")],
+        outputs=[sandbox])
+    tablet_btn.click(
+        fn=GradioEvents.change_device_preview,
+        inputs=[gr.State("tablet")],
+        outputs=[sandbox])
+    mobile_btn.click(
+        fn=GradioEvents.change_device_preview,
+        inputs=[gr.State("mobile")],
+        outputs=[sandbox])
+    
     submit_btn.click(
         fn=GradioEvents.open_modal,
         outputs=[output_code_drawer],
@@ -470,7 +608,7 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:  # ADDED: titl
                inputs=[input, system_prompt_input, state],
                outputs=[
                    output, state_tab, sandbox, download_content,
-                   output_loading, state
+                   output_loading, state, suggestions_container
                ]).then(fn=GradioEvents.enable_btns([submit_btn, download_btn]),
                        outputs=[submit_btn, download_btn
                                 ]).then(fn=GradioEvents.close_modal,
@@ -482,7 +620,7 @@ if __name__ == "__main__":
     
     demo.queue(default_concurrency_limit=100,
                max_size=100).launch(
-                   server_name="0.0.0.0",  # Required for Render
+                   server_name="0.0.0.0",
                    server_port=port,
                    ssr_mode=False,
                    max_threads=100
