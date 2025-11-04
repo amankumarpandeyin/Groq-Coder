@@ -6,6 +6,34 @@ GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 # Model Configuration
 MODEL = "openai/gpt-oss-120b"
 
+# Available Models for Selection
+AVAILABLE_MODELS = [
+    {
+        "name": "GPT OSS 120B",
+        "value": "openai/gpt-oss-120b",
+        "description": "OpenAI GPT OSS - Powerful and versatile",
+        "max_tokens": 8192
+    },
+    {
+        "name": "Llama 3.3 70B",
+        "value": "llama-3.3-70b-versatile",
+        "description": "Meta's Llama 3.3 - Fast and efficient",
+        "max_tokens": 8192
+    },
+    {
+        "name": "Qwen 3 32B",
+        "value": "qwen/qwen3-32b",
+        "description": "Alibaba's Qwen 3 - Great for reasoning",
+        "max_tokens": 4096
+    },
+    {
+        "name": "Kimi K2 Instruct",
+        "value": "moonshotai/kimi-k2-instruct-0905",
+        "description": "Moonshot AI - Excellent for instructions",
+        "max_tokens": 4096
+    }
+]
+
 # System Prompt
 SYSTEM_PROMPT = """You are an expert on frontend design, you will always respond to web design tasks.
 Your task is to create a website according to the user's request using either native HTML or React framework.
