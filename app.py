@@ -322,7 +322,6 @@ export default Demo
     def new_project(state_value):
         """Start a new project by clearing history and resetting UI"""
         state_value["history"] = []
-        gr.Info("✨ New project started! Previous conversation cleared.")
         return [
             gr.update(value=state_value),  # state
             gr.update(value=""),  # input
@@ -331,6 +330,7 @@ export default Demo
             gr.update(visible=False),  # suggestions_container
             gr.update(disabled=True),  # download_btn
             gr.update(value=""),  # output
+            gr.update(value=""),  # download_content
         ]
 
     @staticmethod
@@ -707,20 +707,26 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                                 inputs=[gr.State(suggestion["prompt"]), input],
                                                 outputs=[input])
 
+                    # Modals must be defined before other modals/drawers for proper rendering
                     # NEW: Confirmation Modal for New Project
                     with antd.Modal(
                         open=False,
                         title="🆕 Start New Project?",
                         width="500px",
                         ok_text="Yes, Start Fresh",
-                        cancel_text="Cancel") as new_project_modal:
-                        antd.Typography.Paragraph(
-                            "Are you sure you want to start a new project?",
-                            strong=True,
-                            elem_style=dict(marginBottom=12))
-                        antd.Typography.Text(
-                            "⚠️ Your current conversation will be cleared. This helps the AI focus on your new project without context from previous designs.",
-                            type="secondary")
+                        cancel_text="Cancel",
+                        centered=True) as new_project_modal:
+                        with antd.Flex(vertical=True, gap="middle"):
+                            antd.Typography.Paragraph(
+                                "Are you sure you want to start a new project?",
+                                strong=True,
+                                elem_style=dict(marginBottom=8))
+                            with antd.Alert(
+                                message="Your current conversation will be cleared",
+                                description="This helps the AI focus on your new project without context from previous designs.",
+                                type="warning",
+                                show_icon=True):
+                                pass
 
                     # Modals and Drawers
                     with antd.Modal(open=False,
@@ -815,7 +821,10 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
     new_project_modal.ok(
         fn=GradioEvents.new_project,
         inputs=[state],
-        outputs=[state, input, state_tab, sandbox, suggestions_container, download_btn, output]
+        outputs=[state, input, state_tab, sandbox, suggestions_container, download_btn, output, download_content]
+    ).then(
+        fn=lambda: gr.Info("✨ New project started! Previous conversation cleared."),
+        outputs=[]
     ).then(
         fn=GradioEvents.close_modal,
         outputs=[new_project_modal]
