@@ -83,6 +83,46 @@ EXAMPLES = [
     },
 ]
 
+# AI Suggestions for Enhancement
+AI_SUGGESTIONS = [
+    {
+        "icon": "🎨",
+        "title": "Add Animations",
+        "description": "Add smooth transitions and micro-interactions",
+        "prompt": "Add smooth animations and transitions to the current design using framer-motion. Include hover effects, fade-in animations, and interactive elements."
+    },
+    {
+        "icon": "📱",
+        "title": "Make it Responsive",
+        "description": "Optimize for mobile and tablet devices",
+        "prompt": "Make the current design fully responsive for mobile, tablet, and desktop devices. Ensure proper layout adjustments and touch-friendly interactions."
+    },
+    {
+        "icon": "✨",
+        "title": "Add Interactive Elements",
+        "description": "Include buttons, forms, and user interactions",
+        "prompt": "Add more interactive elements to the current design, such as clickable buttons, forms with validation, modals, tooltips, and dynamic content updates."
+    },
+    {
+        "icon": "🎭",
+        "title": "Enhance UI Design",
+        "description": "Apply modern design patterns and aesthetics",
+        "prompt": "Enhance the visual design with modern UI patterns: add gradients, glassmorphism effects, improved color scheme, better typography, and visual hierarchy."
+    },
+    {
+        "icon": "⚡",
+        "title": "Add Advanced Features",
+        "description": "Include search, filters, or data visualization",
+        "prompt": "Add advanced features to the current design such as search functionality, filtering options, sorting, data visualization with charts, or real-time updates."
+    },
+    {
+        "icon": "🌙",
+        "title": "Dark Mode",
+        "description": "Add a dark theme toggle",
+        "prompt": "Add a dark mode toggle to the current design. Implement a theme switcher with smooth transitions between light and dark modes, maintaining accessibility."
+    }
+]
+
 # UI Configuration
 DEFAULT_LOCALE = 'en_US'
 
