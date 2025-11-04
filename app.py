@@ -1,12 +1,177 @@
+import os
 import re
 import gradio as gr
 import modelscope_studio.components.antd as antd
 import modelscope_studio.components.base as ms
 import modelscope_studio.components.pro as pro
 from groq import Groq
-from config import GROQ_API_KEY, MODEL, SYSTEM_PROMPT, EXAMPLES, DEFAULT_LOCALE, DEFAULT_THEME, AI_SUGGESTIONS
+
+# ============================================
+# CONFIGURATION SECTION
+# ============================================
+
+# Groq API Configuration
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 client = Groq(api_key=GROQ_API_KEY)
 
+# Model Configuration
+MODEL = "openai/gpt-oss-120b"
+
+# Available Models for Selection
+AVAILABLE_MODELS = [
+    {
+        "name": "GPT OSS 120B",
+        "value": "openai/gpt-oss-120b",
+        "description": "OpenAI GPT OSS - Powerful and versatile",
+        "max_tokens": 8192
+    },
+    {
+        "name": "Llama 3.3 70B",
+        "value": "llama-3.3-70b-versatile",
+        "description": "Meta's Llama 3.3 - Fast and efficient",
+        "max_tokens": 8192
+    },
+    {
+        "name": "Qwen 3 32B",
+        "value": "qwen/qwen3-32b",
+        "description": "Alibaba's Qwen 3 - Great for reasoning",
+        "max_tokens": 4096
+    },
+    {
+        "name": "Kimi K2 Instruct",
+        "value": "moonshotai/kimi-k2-instruct-0905",
+        "description": "Moonshot AI - Excellent for instructions",
+        "max_tokens": 4096
+    }
+]
+
+# System Prompt
+SYSTEM_PROMPT = """You are an expert on frontend design, you will always respond to web design tasks.
+Your task is to create a website according to the user's request using either native HTML or React framework.
+When choosing implementation framework, you should follow these rules:
+[Implementation Rules]
+1. You should use React by default.
+2. When the user requires HTML, choose HTML to implement the request.
+3. If the user requires a library that is not installed in current react environment, please use HTML and tell the user the reason.
+4. After choosing the implementation framework, please follow the corresponding instruction.
+
+[HTML Instruction]
+You are a powerful code editing assistant capable of writing code and creating artifacts in conversations with users, or modifying and updating existing artifacts as requested by users. 
+All code is written in a single code block to form a complete code file for display, without separating HTML and JavaScript code. An artifact refers to a runnable complete code snippet, you prefer to integrate and output such complete runnable code rather than breaking it down into several code blocks. For certain types of code, they can render graphical interfaces in a UI window. After generation, please check the code execution again to ensure there are no errors in the output.
+Do not use localStorage as it is not supported by current environment.
+Output only the HTML, without any additional descriptive text.
+
+[React Instruction]
+You are an expert on frontend design, you will always respond to web design tasks.
+Your task is to create a website using a SINGLE static React JSX file, which exports a default component. This code will go directly into the App.jsx file and will be used to render the website.
+
+## Common Design Principles
+Regardless of the technology used, follow these principles for all designs:
+
+### General Design Guidelines:
+- Create a stunning, contemporary, and highly functional website based on the user's request
+- Implement a cohesive design language throughout the entire website/application
+- Choose a carefully selected, harmonious color palette that enhances the overall aesthetic
+- Create a clear visual hierarchy with proper typography to improve readability
+- Incorporate subtle animations and transitions to add polish and improve user experience
+- Ensure proper spacing and alignment using appropriate layout techniques
+- Implement responsive design principles to ensure the website looks great on all device sizes
+- Use modern UI patterns like cards, gradients, and subtle shadows to add depth and visual interest
+- Incorporate whitespace effectively to create a clean, uncluttered design
+- For images, use placeholder images from services like https://placehold.co/
+
+## React Design Guidelines
+
+### Implementation Requirements:
+- Ensure the React app is a single page application
+- DO NOT include any external libraries, frameworks, or dependencies outside of what is already installed
+- Utilize TailwindCSS for styling, focusing on creating a visually appealing and responsive layout
+- Avoid using arbitrary values (e.g., `h-[600px]`). Stick to Tailwind's predefined classes for consistency
+- Use mock data instead of making HTTP requests or API calls to external services
+- Utilize Tailwind's typography classes to create a clear visual hierarchy and improve readability
+- Ensure proper spacing and alignment using Tailwind's margin, padding, and flexbox/grid classes
+- Do not use localStorage as it is not supported by current environment.
+
+### Installed Libraries:
+You can use these installed libraries if required.
+- **lucide-react**: Lightweight SVG icon library with 1000+ icons. Import as `import { IconName } from "lucide-react"`. Perfect for buttons, navigation, status indicators, and decorative elements.
+- **recharts**: Declarative charting library built on D3. Import components like `import { LineChart, BarChart } from "recharts"`. Use for data visualization, analytics dashboards, and statistical displays.
+- **framer-motion**: Production-ready motion library for React. Import as `import { motion } from "framer-motion"`. Use for animations, page transitions, hover effects, and interactive micro-interactions.
+- **p5.js**: JavaScript library for creative coding and generative art. Usage: import p5 from "p5". Create interactive visuals, animations, sound-driven experiences, and artistic simulations.
+- **three, @react-three/fiber, @react-three/drei**: 3D graphics library with React renderer and helpers. Import as `import { Canvas } from "@react-three/fiber"` and `import { OrbitControls } from "@react-three/drei"`. Use for 3D scenes, visualizations, and immersive experiences.
+
+Remember to only return code for the App.jsx file and nothing else. The resulting application should be visually impressive, highly functional, and something users would be proud to showcase."""
+
+# Examples
+EXAMPLES = [
+    {
+        "title": "Bouncing ball",
+        "description": "Make a page in HTML that shows an animation of a ball bouncing in a rotating hypercube.",
+    },
+    {
+        "title": "Pokémon SVG",
+        "description": "Help me to generate an SVG of 5 Pokémons, include details."
+    },
+    {
+        "title": "Strawberry card",
+        "description": """How many "r"s are in the word "strawberry"? Make a cute little card!"""
+    },
+    {
+        "title": "TODO list",
+        "description": "I want a TODO list that allows me to add tasks, delete tasks, and I would like the overall color theme to be purple."
+    },
+]
+
+# AI Suggestions for Enhancement
+AI_SUGGESTIONS = [
+    {
+        "icon": "🎨",
+        "title": "Add Animations",
+        "description": "Add smooth transitions and micro-interactions",
+        "prompt": "Add smooth animations and transitions to the current design using framer-motion. Include hover effects, fade-in animations, and interactive elements."
+    },
+    {
+        "icon": "📱",
+        "title": "Make it Responsive",
+        "description": "Optimize for mobile and tablet devices",
+        "prompt": "Make the current design fully responsive for mobile, tablet, and desktop devices. Ensure proper layout adjustments and touch-friendly interactions."
+    },
+    {
+        "icon": "✨",
+        "title": "Add Interactive Elements",
+        "description": "Include buttons, forms, and user interactions",
+        "prompt": "Add more interactive elements to the current design, such as clickable buttons, forms with validation, modals, tooltips, and dynamic content updates."
+    },
+    {
+        "icon": "🎭",
+        "title": "Enhance UI Design",
+        "description": "Apply modern design patterns and aesthetics",
+        "prompt": "Enhance the visual design with modern UI patterns: add gradients, glassmorphism effects, improved color scheme, better typography, and visual hierarchy."
+    },
+    {
+        "icon": "⚡",
+        "title": "Add Advanced Features",
+        "description": "Include search, filters, or data visualization",
+        "prompt": "Add advanced features to the current design such as search functionality, filtering options, sorting, data visualization with charts, or real-time updates."
+    },
+    {
+        "icon": "🌙",
+        "title": "Dark Mode",
+        "description": "Add a dark theme toggle",
+        "prompt": "Add a dark mode toggle to the current design. Implement a theme switcher with smooth transitions between light and dark modes, maintaining accessibility."
+    }
+]
+
+# UI Configuration
+DEFAULT_LOCALE = 'en_US'
+
+DEFAULT_THEME = {
+    "token": {
+        "colorPrimary": "#6A57FF",
+    }
+}
+
+# React Imports
 react_imports = {
     "lucide-react": "https://esm.sh/lucide-react@0.525.0",
     "recharts": "https://esm.sh/recharts@3.1.0",
@@ -25,6 +190,9 @@ react_imports = {
     "react-dom/": "https://esm.sh/react-dom@^19.0.0/"
 }
 
+# ============================================
+# GRADIO EVENTS CLASS
+# ============================================
 
 class GradioEvents:
 
@@ -145,33 +313,11 @@ export default Demo
             if model["value"] == selected_model:
                 return gr.update(value=f"{model['description']} | Max tokens: {model['max_tokens']}")
         return gr.update(value=f"Powered by {selected_model}")
-        """Apply AI suggestion to input field"""
-        return gr.update(value=suggestion_text)
 
     @staticmethod
     def apply_suggestion(suggestion_text, input_field):
         """Apply AI suggestion to input field"""
         return gr.update(value=suggestion_text)
-        """Change preview dimensions based on device type"""
-        device_dimensions = {
-            "desktop": {"width": "100%", "height": "100%"},
-            "tablet": {"width": "768px", "height": "1024px"},
-            "mobile": {"width": "375px", "height": "667px"}
-        }
-        
-        dims = device_dimensions.get(device_type, device_dimensions["desktop"])
-        
-        # Return CSS style update for the sandbox container
-        return gr.update(
-            elem_style={
-                "maxWidth": dims["width"],
-                "height": dims["height"],
-                "margin": "0 auto" if device_type != "desktop" else "0",
-                "border": "1px solid #e0e0e0" if device_type != "desktop" else "none",
-                "borderRadius": "8px" if device_type != "desktop" else "0",
-                "boxShadow": "0 2px 8px rgba(0,0,0,0.1)" if device_type != "desktop" else "none"
-            }
-        )
 
     @staticmethod
     def change_device_preview(device_type):
@@ -198,7 +344,6 @@ export default Demo
 
     @staticmethod
     def select_example(example: dict):
-        return lambda: gr.update(value=example["description"])
         return lambda: gr.update(value=example["description"])
 
     @staticmethod
@@ -236,6 +381,10 @@ export default Demo
         state_value["history"] = []
         return gr.update(value=state_value)
 
+
+# ============================================
+# CSS AND THEME
+# ============================================
 
 css = """
 #coder-artifacts .output-empty,.output-loading {
@@ -316,6 +465,10 @@ css = """
 """
 
 theme = gr.themes.Default()
+
+# ============================================
+# GRADIO INTERFACE
+# ============================================
 
 with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:
     # Global State
