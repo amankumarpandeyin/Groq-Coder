@@ -226,7 +226,7 @@ with gr.Blocks(css=css) as demo:
                                            vertical=True,
                                            gap="middle"):
                                 antd.Image(
-                                    "1.png",
+                                    "https://i.ibb.co/fYRyJNq0/Screenshot-from-2025-11-04-08-53-02.png",
                                     width=200,
                                     height=200,
                                     preview=False)
