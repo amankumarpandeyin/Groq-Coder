@@ -320,29 +320,6 @@ export default Demo
         return gr.update(value=suggestion_text)
 
     @staticmethod
-    def change_device_preview(device_type):
-        """Change preview dimensions based on device type"""
-        device_dimensions = {
-            "desktop": {"width": "100%", "height": "100%"},
-            "tablet": {"width": "768px", "height": "1024px"},
-            "mobile": {"width": "375px", "height": "667px"}
-        }
-        
-        dims = device_dimensions.get(device_type, device_dimensions["desktop"])
-        
-        # Return CSS style update for the sandbox container
-        return gr.update(
-            elem_style={
-                "maxWidth": dims["width"],
-                "height": dims["height"],
-                "margin": "0 auto" if device_type != "desktop" else "0",
-                "border": "1px solid #e0e0e0" if device_type != "desktop" else "none",
-                "borderRadius": "8px" if device_type != "desktop" else "0",
-                "boxShadow": "0 2px 8px rgba(0,0,0,0.1)" if device_type != "desktop" else "none"
-            }
-        )
-
-    @staticmethod
     def select_example(example: dict):
         return lambda: gr.update(value=example["description"])
 
@@ -417,22 +394,6 @@ css = """
 }
 #coder-artifacts-code-drawer .output-code .ms-gr-ant-spin-nested-loading {
   min-height: 100%;
-}
-
-/* Device Preview Styles */
-.device-preview-container {
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  width: 100%;
-  height: 100%;
-  overflow: auto;
-  padding: 20px;
-  background: #f5f5f5;
-}
-
-.device-preview-buttons {
-  margin-bottom: 16px;
 }
 
 /* AI Suggestions Panel Styles */
@@ -602,27 +563,6 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:
                                     view_code_btn = antd.Button(
                                         "🧑‍💻 View Code", type="primary")
                             
-                            # Device Preview Controls
-                            with antd.Flex(gap="small", 
-                                         wrap=True,
-                                         elem_classes="device-preview-buttons",
-                                         justify="center"):
-                                antd.Typography.Text("Device Preview:", 
-                                                    strong=True,
-                                                    elem_style=dict(marginRight=8))
-                                desktop_btn = antd.Button(
-                                    "🖥️ Desktop",
-                                    type="primary",
-                                    size="small")
-                                tablet_btn = antd.Button(
-                                    "📱 Tablet",
-                                    type="default",
-                                    size="small")
-                                mobile_btn = antd.Button(
-                                    "📱 Mobile",
-                                    type="default",
-                                    size="small")
-                            
                             # Output Content
                             with antd.Tabs(
                                     elem_style=dict(height="100%"),
@@ -640,12 +580,11 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:
                                             elem_classes="output-loading"):
                                         ms.Div()
                                 with antd.Tabs.Item(key="render"):
-                                    with ms.Div(elem_classes="device-preview-container"):
-                                        sandbox = pro.WebSandbox(
-                                            height="100%",
-                                            elem_classes="output-html",
-                                            template="html",
-                                        )
+                                    sandbox = pro.WebSandbox(
+                                        height="100%",
+                                        elem_classes="output-html",
+                                        template="html",
+                                    )
                         
                         # AI Suggestions Panel
                         with ms.Div(visible=False) as suggestions_container:
@@ -803,20 +742,6 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:
 }""")
     view_code_btn.click(fn=GradioEvents.open_modal,
                         outputs=[output_code_drawer])
-    
-    # Device Preview Button Events
-    desktop_btn.click(
-        fn=GradioEvents.change_device_preview,
-        inputs=[gr.State("desktop")],
-        outputs=[sandbox])
-    tablet_btn.click(
-        fn=GradioEvents.change_device_preview,
-        inputs=[gr.State("tablet")],
-        outputs=[sandbox])
-    mobile_btn.click(
-        fn=GradioEvents.change_device_preview,
-        inputs=[gr.State("mobile")],
-        outputs=[sandbox])
     
     submit_btn.click(
         fn=GradioEvents.open_modal,
