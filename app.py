@@ -5,8 +5,6 @@ import modelscope_studio.components.base as ms
 import modelscope_studio.components.pro as pro
 from groq import Groq
 from config import GROQ_API_KEY, MODEL, SYSTEM_PROMPT, EXAMPLES, DEFAULT_LOCALE, DEFAULT_THEME
-
-# Initialize Groq client
 client = Groq(api_key=GROQ_API_KEY)
 
 react_imports = {
@@ -84,15 +82,12 @@ class GradioEvents:
                 if chunk.choices[0].delta.content:
                     content = chunk.choices[0].delta.content
                     response += content
-                    
-                    # Generating - stream the response
                     yield {
                         output: gr.update(value=response),
                         output_loading: gr.update(spinning=False),
                     }
                 
                 if chunk.choices[0].finish_reason == 'stop':
-                    # Update history
                     state_value["history"] = messages + [{
                         'role': "assistant",
                         'content': response
@@ -206,9 +201,23 @@ css = """
   min-height: 100%;
 }
 
+/* NEW: Hide global Gradio footer/branding */
+.gradio-container .footer {
+    display: none !important;
+}
+.gradio-container .logo {
+    display: none !important;
+}
 """
 
-with gr.Blocks(css=css) as demo:
+# NEW: Custom theme to hide Gradio branding (logo, footer, etc.)
+theme = gr.themes.Default().set(
+    logo_display="none",
+    branding_display="none",
+    footer_display="none"
+)
+
+with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:  # ADDED: title, theme, css params
     # Global State
     state = gr.State({"system_prompt": "", "history": []})
     with ms.Application(elem_id="coder-artifacts") as app:
@@ -468,7 +477,6 @@ with gr.Blocks(css=css) as demo:
                                         outputs=[output_code_drawer])
 
 if __name__ == "__main__":
-    # Get port from environment variable (Render provides this)
     import os
     port = int(os.environ.get('PORT', 7860))
     
