@@ -4,7 +4,7 @@ import modelscope_studio.components.antd as antd
 import modelscope_studio.components.base as ms
 import modelscope_studio.components.pro as pro
 from groq import Groq
-from config import GROQ_API_KEY, MODEL, SYSTEM_PROMPT, EXAMPLES, DEFAULT_LOCALE, DEFAULT_THEME, AI_SUGGESTIONS, AVAILABLE_MODELS
+from config import GROQ_API_KEY, MODEL, SYSTEM_PROMPT, EXAMPLES, DEFAULT_LOCALE, DEFAULT_THEME, AI_SUGGESTIONS
 client = Groq(api_key=GROQ_API_KEY)
 
 react_imports = {
@@ -195,6 +195,10 @@ export default Demo
                 "boxShadow": "0 2px 8px rgba(0,0,0,0.1)" if device_type != "desktop" else "none"
             }
         )
+
+    @staticmethod
+    def select_example(example: dict):
+        return lambda: gr.update(value=example["description"])
         return lambda: gr.update(value=example["description"])
 
     @staticmethod
