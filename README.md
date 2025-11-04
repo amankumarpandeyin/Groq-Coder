@@ -1,5 +1,5 @@
 ---
-title: Qwen3 Coder WebDev
+title: Groq Coder WebDev
 emoji: 🌍
 colorFrom: red
 colorTo: blue
@@ -10,4 +10,3 @@ pinned: false
 license: apache-2.0
 ---
 
-Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
