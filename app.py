@@ -319,6 +319,21 @@ export default Demo
             }
 
     @staticmethod
+    def new_project(state_value):
+        """Start a new project by clearing history and resetting UI"""
+        state_value["history"] = []
+        gr.Info("✨ New project started! Previous conversation cleared.")
+        return [
+            gr.update(value=state_value),  # state
+            gr.update(value=""),  # input
+            gr.update(active_key="empty"),  # state_tab
+            gr.update(value=None),  # sandbox
+            gr.update(visible=False),  # suggestions_container
+            gr.update(disabled=True),  # download_btn
+            gr.update(value=""),  # output
+        ]
+
+    @staticmethod
     def update_model_info(selected_model):
         """Update model info text when model is changed"""
         for model in AVAILABLE_MODELS:
@@ -459,6 +474,18 @@ css = """
 .output-loading {
   animation: pulse 2s ease-in-out infinite;
 }
+
+/* New Project Button Styling */
+.new-project-btn {
+  border: 2px dashed #6A57FF !important;
+  background: transparent !important;
+  transition: all 0.3s ease;
+}
+
+.new-project-btn:hover {
+  background: #f0edff !important;
+  border-color: #5243d9 !important;
+}
 """
 
 theme = gr.themes.Default()
@@ -491,7 +518,7 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                     level=1,
                                     elem_style=dict(fontSize=24))
                                 
-                            # Model Selection Card - FIXED: Set default value
+                            # Model Selection Card
                             with antd.Card(
                                 title="🤖 Select AI Model",
                                 size="small",
@@ -542,11 +569,20 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                                        color="default",
                                                        size="small")
                             
-                            submit_btn = antd.Button("🚀 Generate Code",
-                                                     type="primary",
-                                                     block=True,
-                                                     size="large",
-                                                     elem_id="submit-btn")
+                            # NEW: Action Buttons Row with Generate and New Project
+                            with antd.Flex(gap="small", elem_style=dict(width="100%")):
+                                submit_btn = antd.Button(
+                                    "🚀 Generate Code",
+                                    type="primary",
+                                    size="large",
+                                    elem_id="submit-btn",
+                                    elem_style=dict(flex=1))
+                                
+                                new_project_btn = antd.Button(
+                                    "✨ New Project",
+                                    size="large",
+                                    elem_classes="new-project-btn",
+                                    elem_style=dict(flex=1))
 
                             antd.Divider("Settings")
 
@@ -591,7 +627,6 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                                 flexDirection="column"),
                                 styles=dict(body=dict(height=0, flex=1)),
                                 elem_id="output-container"):
-                            # FIXED: Single download button in card extra
                             with ms.Slot("extra"):
                                 with antd.Space(size="small"):
                                     download_btn = antd.Button(
@@ -672,6 +707,21 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                                 inputs=[gr.State(suggestion["prompt"]), input],
                                                 outputs=[input])
 
+                    # NEW: Confirmation Modal for New Project
+                    with antd.Modal(
+                        open=False,
+                        title="🆕 Start New Project?",
+                        width="500px",
+                        ok_text="Yes, Start Fresh",
+                        cancel_text="Cancel") as new_project_modal:
+                        antd.Typography.Paragraph(
+                            "Are you sure you want to start a new project?",
+                            strong=True,
+                            elem_style=dict(marginBottom=12))
+                        antd.Typography.Text(
+                            "⚠️ Your current conversation will be cleared. This helps the AI focus on your new project without context from previous designs.",
+                            type="secondary")
+
                     # Modals and Drawers
                     with antd.Modal(open=False,
                                     title="⚙️ System Prompt Configuration",
@@ -749,12 +799,33 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                             get_target=
                             "() => document.querySelector('#settings-area')")
     
-
+    # Event Handlers
     model_selector.change(
         fn=GradioEvents.update_model_info,
         inputs=[model_selector],
         outputs=[selected_model_info]
     )
+    
+    # NEW: New Project Button Event Handlers
+    new_project_btn.click(
+        fn=GradioEvents.open_modal,
+        outputs=[new_project_modal]
+    )
+    
+    new_project_modal.ok(
+        fn=GradioEvents.new_project,
+        inputs=[state],
+        outputs=[state, input, state_tab, sandbox, suggestions_container, download_btn, output]
+    ).then(
+        fn=GradioEvents.close_modal,
+        outputs=[new_project_modal]
+    )
+    
+    new_project_modal.cancel(
+        fn=GradioEvents.close_modal,
+        outputs=[new_project_modal]
+    )
+    
     gr.on(fn=GradioEvents.close_modal,
           triggers=[usage_tour.close, usage_tour.finish],
           outputs=[usage_tour])
