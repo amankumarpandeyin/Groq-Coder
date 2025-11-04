@@ -5,23 +5,27 @@ import modelscope_studio.components.antd as antd
 import modelscope_studio.components.base as ms
 import modelscope_studio.components.pro as pro
 from groq import Groq
+
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 if not GROQ_API_KEY:
     raise ValueError("GROQ_API_KEY environment variable is not set")
 
 client = Groq(api_key=GROQ_API_KEY)
-MODEL = "openai/gpt-oss-120b"
+
+# Set default model
+DEFAULT_MODEL = "llama-3.3-70b-versatile"
+
 AVAILABLE_MODELS = [
+    {
+        "name": "Llama 3.3 70B (Recommended)",
+        "value": "llama-3.3-70b-versatile",
+        "description": "Meta's Llama 3.3 - Fast and efficient",
+        "max_tokens": 8192
+    },
     {
         "name": "GPT OSS 120B",
         "value": "openai/gpt-oss-120b",
         "description": "OpenAI GPT OSS - Powerful and versatile",
-        "max_tokens": 8192
-    },
-    {
-        "name": "Llama 3.3 70B",
-        "value": "llama-3.3-70b-versatile",
-        "description": "Meta's Llama 3.3 - Fast and efficient",
         "max_tokens": 8192
     },
     {
@@ -37,6 +41,7 @@ AVAILABLE_MODELS = [
         "max_tokens": 4096
     }
 ]
+
 SYSTEM_PROMPT = """You are an expert on frontend design, you will always respond to web design tasks.
 Your task is to create a website according to the user's request using either native HTML or React framework.
 When choosing implementation framework, you should follow these rules:
@@ -69,7 +74,7 @@ Regardless of the technology used, follow these principles for all designs:
 - Implement responsive design principles to ensure the website looks great on all device sizes
 - Use modern UI patterns like cards, gradients, and subtle shadows to add depth and visual interest
 - Incorporate whitespace effectively to create a clean, uncluttered design
-- For images, use placeholder images from services like https://placehold.co/
+- For images, use placeholder images from services like [https://placehold.co/](https://placehold.co/)
 
 ## React Design Guidelines
 
@@ -92,6 +97,7 @@ You can use these installed libraries if required.
 - **three, @react-three/fiber, @react-three/drei**: 3D graphics library with React renderer and helpers. Import as `import { Canvas } from "@react-three/fiber"` and `import { OrbitControls } from "@react-three/drei"`. Use for 3D scenes, visualizations, and immersive experiences.
 
 Remember to only return code for the App.jsx file and nothing else. The resulting application should be visually impressive, highly functional, and something users would be proud to showcase."""
+
 EXAMPLES = [
     {
         "title": "Bouncing ball",
@@ -110,6 +116,7 @@ EXAMPLES = [
         "description": "I want a TODO list that allows me to add tasks, delete tasks, and I would like the overall color theme to be purple."
     },
 ]
+
 AI_SUGGESTIONS = [
     {
         "icon": "🎨",
@@ -200,6 +207,7 @@ class GradioEvents:
             if len(result) == 0:
                 result["index.html"] = text.strip()
             return result
+        
         if not input_value or input_value.strip() == '':
             yield {
                 output: gr.update(value="⚠️ Please enter a description of what you want to create."),
@@ -218,7 +226,6 @@ class GradioEvents:
             download_btn: gr.update(disabled=True)
         }
 
-      
         messages = [{
             'role': "system",
             "content": system_prompt_input_value or SYSTEM_PROMPT
@@ -226,14 +233,12 @@ class GradioEvents:
 
         messages.append({'role': "user", 'content': input_value.strip()})
 
-   
         max_tokens = 8192
         for model in AVAILABLE_MODELS:
             if model["value"] == selected_model:
                 max_tokens = model["max_tokens"]
                 break
 
-       
         try:
             completion = client.chat.completions.create(
                 model=selected_model,
@@ -251,27 +256,23 @@ class GradioEvents:
                     content = chunk.choices[0].delta.content
                     response += content
                     
-                 
                     yield {
                         output: gr.update(value=response),
                         output_loading: gr.update(spinning=False),
                     }
                 
                 if chunk.choices[0].finish_reason == 'stop':
-               
                     state_value["history"] = messages + [{
                         'role': "assistant",
                         'content': response
                     }]
                     
-             
                     generated_files = get_generated_files(response)
                     react_code = generated_files.get("index.tsx") or generated_files.get("index.jsx")
                     html_code = generated_files.get("index.html")
                     
                     code_to_download = react_code or html_code
                     
-         
                     yield {
                         output: gr.update(value=response),
                         download_content: gr.update(value=code_to_download),
@@ -295,11 +296,9 @@ export default Demo
                     }
                     
         except Exception as e:
-            # comprehensive error handling..
             error_type = type(e).__name__
             error_message = str(e)
             
-            # user-friendly error messages
             if "authentication" in error_message.lower() or "api key" in error_message.lower():
                 friendly_message = "🔐 **Authentication Error**: Invalid API key. Please check your Groq API key."
             elif "rate limit" in error_message.lower():
@@ -464,7 +463,6 @@ css = """
 
 theme = gr.themes.Default()
 
-
 with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
     # Global State
     state = gr.State({"system_prompt": SYSTEM_PROMPT, "history": []})
@@ -493,13 +491,13 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                     level=1,
                                     elem_style=dict(fontSize=24))
                                 
-                      
+                            # Model Selection Card - FIXED: Set default value
                             with antd.Card(
                                 title="🤖 Select AI Model",
                                 size="small",
                                 elem_style=dict(marginBottom=16)):
                                 model_selector = antd.Select(
-                                    default_value=MODEL,
+                                    default_value=DEFAULT_MODEL,
                                     size="large",
                                     elem_style=dict(width="100%"),
                                     options=[
@@ -510,12 +508,21 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                         for model in AVAILABLE_MODELS
                                     ]
                                 )
+                                # Get default model description
+                                default_model_desc = next(
+                                    (m['description'] for m in AVAILABLE_MODELS if m['value'] == DEFAULT_MODEL),
+                                    "Powered by AI"
+                                )
+                                default_model_tokens = next(
+                                    (m['max_tokens'] for m in AVAILABLE_MODELS if m['value'] == DEFAULT_MODEL),
+                                    8192
+                                )
+                                
                                 selected_model_info = antd.Typography.Text(
-                                    f"📊 Powered by {MODEL}",
+                                    f"📊 {default_model_desc} | Max tokens: {default_model_tokens}",
                                     type="secondary",
                                     elem_style=dict(fontSize=12, display="block", marginTop=8))
                                 
-                            
                             input = antd.Input.Textarea(
                                 size="large",
                                 allow_clear=True,
@@ -523,7 +530,6 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                 placeholder="Describe the web application you want to create (be specific for best results)",
                                 elem_id="input-container")
                             
-                      
                             with antd.Flex(justify="space-between", gap="small"):
                                 antd.Typography.Text(
                                     "💡 Tip: The model supports multi-turn conversations. You can refine your design iteratively!",
@@ -536,7 +542,6 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                                        color="default",
                                                        size="small")
                             
-                        
                             submit_btn = antd.Button("🚀 Generate Code",
                                                      type="primary",
                                                      block=True,
@@ -545,7 +550,6 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
 
                             antd.Divider("Settings")
 
-                            
                             with antd.Space(size="small",
                                             wrap=True,
                                             elem_id="settings-area"):
@@ -587,24 +591,24 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                                 flexDirection="column"),
                                 styles=dict(body=dict(height=0, flex=1)),
                                 elem_id="output-container"):
-                            # Output Container Extra
+                            # FIXED: Single download button in card extra
                             with ms.Slot("extra"):
-                                with ms.Div(elem_id="output-container-extra"):
-                                    with antd.Button(
-                                            "📥 Download Code",
-                                            type="link",
-                                            href_target="_blank",
-                                            disabled=True,
-                                    ) as download_btn:
-                                        with ms.Slot("icon"):
-                                            antd.Icon("DownloadOutlined")
-                                    download_content = gr.Text(visible=False)
-
+                                with antd.Space(size="small"):
+                                    download_btn = antd.Button(
+                                        "📥 Download",
+                                        type="default",
+                                        size="small",
+                                        disabled=True
+                                    )
                                     view_code_btn = antd.Button(
-                                        " View Code", 
-                                        type="primary")
+                                        "👨‍💻 View Code", 
+                                        type="primary",
+                                        size="small"
+                                    )
                             
-                        
+                            # Hidden component for download content
+                            download_content = gr.Text(visible=False)
+                            
                             with antd.Tabs(
                                     elem_style=dict(height="100%"),
                                     active_key="empty",
@@ -630,7 +634,7 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                         template="html",
                                     )
                         
-                       
+                        # AI Suggestions Panel
                         with ms.Div(visible=False) as suggestions_container:
                             with antd.Card(
                                 title="✨ AI Enhancement Suggestions",
@@ -663,13 +667,12 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                                         type="secondary",
                                                         elem_style=dict(fontSize=12))
                                             
-                                            
                                             suggestion_card.click(
                                                 fn=GradioEvents.apply_suggestion,
                                                 inputs=[gr.State(suggestion["prompt"]), input],
                                                 outputs=[input])
 
-                 
+                    # Modals and Drawers
                     with antd.Modal(open=False,
                                     title="⚙️ System Prompt Configuration",
                                     width="800px") as system_prompt_modal:
@@ -826,14 +829,12 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
         inputs=[input, system_prompt_input, state, model_selector],
         outputs=[
             output, state_tab, sandbox, download_content,
-            output_loading, state, suggestions_container, download_btn  #boner
+            output_loading, state, suggestions_container, download_btn
         ]
     ).then(
         fn=GradioEvents.enable_btns([submit_btn]),
         outputs=[submit_btn]
-    ).then(
-        fn=GradioEvents.close_modal,
-        outputs=[output_code_drawer])
+    )
 
 if __name__ == "__main__":
     import os
