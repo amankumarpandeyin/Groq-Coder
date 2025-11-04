@@ -20,13 +20,13 @@
 
 ###  Core Features
 
-- ** Lightning Generation**: Sub-second code generation with Groq's optimized LPU™ architecture
-- ** Live Preview**: Instant sandbox rendering with React/HTML support
-- ** Smart Framework Selection**: Automatically chooses optimal tech stack (React/HTML)
-- ** Responsive Design**: TailwindCSS integration for mobile-first development
-- ** Rich Libraries**: Pre-configured with Lucide, Recharts, Framer Motion, Three.js, P5.js
-- ** Context-Aware**: Multi-turn conversations with persistent chat history
-- ** Zero Setup**: One-click deployment ready
+-  Lightning Generation: Sub-second code generation with Groq's optimized LPU™ architecture
+-  Live Preview: Instant sandbox rendering with React/HTML support
+-  Smart Framework Selection: Automatically chooses optimal tech stack (React/HTML)
+-  Responsive Design: TailwindCSS integration for mobile-first development
+-  Rich Libraries: Pre-configured with Lucide, Recharts, Framer Motion, Three.js, P5.js
+-  Context-Aware: Multi-turn conversations with persistent chat history
+-  Zero Setup: One-click deployment ready
 
 ##  How It Works
 
