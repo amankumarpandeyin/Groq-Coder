@@ -482,7 +482,7 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                            vertical=True,
                                            gap="middle"):
                                 antd.Image(
-                                    "https://i.ibb.co/fYRyJNq/Screenshot-from-2025-11-04-08-53-02.png",
+                                    "https://i.ibb.co/7Nd1sKyJ/Screenshot-from-2025-11-05-00-06-14.png",
                                     width=200,
                                     height=200,
                                     preview=False)
