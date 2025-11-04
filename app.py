@@ -4,7 +4,7 @@ import modelscope_studio.components.antd as antd
 import modelscope_studio.components.base as ms
 import modelscope_studio.components.pro as pro
 from groq import Groq
-from config import GROQ_API_KEY, MODEL, SYSTEM_PROMPT, EXAMPLES, DEFAULT_LOCALE, DEFAULT_THEME, AI_SUGGESTIONS
+from config import GROQ_API_KEY, MODEL, SYSTEM_PROMPT, EXAMPLES, DEFAULT_LOCALE, DEFAULT_THEME, AI_SUGGESTIONS, AVAILABLE_MODELS
 client = Groq(api_key=GROQ_API_KEY)
 
 react_imports = {
@@ -29,7 +29,7 @@ react_imports = {
 class GradioEvents:
 
     @staticmethod
-    def generate_code(input_value, system_prompt_input_value, state_value):
+    def generate_code(input_value, system_prompt_input_value, state_value, selected_model):
 
         def get_generated_files(text):
             patterns = {
@@ -66,13 +66,20 @@ class GradioEvents:
 
         messages.append({'role': "user", 'content': input_value})
 
+        # Get max tokens for selected model
+        max_tokens = 8192
+        for model in AVAILABLE_MODELS:
+            if model["value"] == selected_model:
+                max_tokens = model["max_tokens"]
+                break
+
         # Use Groq API with streaming
         try:
             completion = client.chat.completions.create(
-                model=MODEL,
+                model=selected_model,
                 messages=messages,
                 temperature=1,
-                max_completion_tokens=8192,
+                max_completion_tokens=max_tokens,
                 top_p=1,
                 stream=True,
                 stop=None
@@ -132,9 +139,39 @@ export default Demo
             }
 
     @staticmethod
+    def update_model_info(selected_model):
+        """Update model info text when model is changed"""
+        for model in AVAILABLE_MODELS:
+            if model["value"] == selected_model:
+                return gr.update(value=f"{model['description']} | Max tokens: {model['max_tokens']}")
+        return gr.update(value=f"Powered by {selected_model}")
+        """Apply AI suggestion to input field"""
+        return gr.update(value=suggestion_text)
+
+    @staticmethod
     def apply_suggestion(suggestion_text, input_field):
         """Apply AI suggestion to input field"""
         return gr.update(value=suggestion_text)
+        """Change preview dimensions based on device type"""
+        device_dimensions = {
+            "desktop": {"width": "100%", "height": "100%"},
+            "tablet": {"width": "768px", "height": "1024px"},
+            "mobile": {"width": "375px", "height": "667px"}
+        }
+        
+        dims = device_dimensions.get(device_type, device_dimensions["desktop"])
+        
+        # Return CSS style update for the sandbox container
+        return gr.update(
+            elem_style={
+                "maxWidth": dims["width"],
+                "height": dims["height"],
+                "margin": "0 auto" if device_type != "desktop" else "0",
+                "border": "1px solid #e0e0e0" if device_type != "desktop" else "none",
+                "borderRadius": "8px" if device_type != "desktop" else "0",
+                "boxShadow": "0 2px 8px rgba(0,0,0,0.1)" if device_type != "desktop" else "none"
+            }
+        )
 
     @staticmethod
     def change_device_preview(device_type):
@@ -158,9 +195,6 @@ export default Demo
                 "boxShadow": "0 2px 8px rgba(0,0,0,0.1)" if device_type != "desktop" else "none"
             }
         )
-
-    @staticmethod
-    def select_example(example: dict):
         return lambda: gr.update(value=example["description"])
 
     @staticmethod
@@ -282,6 +316,7 @@ theme = gr.themes.Default()
 with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:
     # Global State
     state = gr.State({"system_prompt": "", "history": []})
+    
     with ms.Application(elem_id="coder-artifacts") as app:
         with antd.ConfigProvider(theme=DEFAULT_THEME, locale=DEFAULT_LOCALE):
 
@@ -305,10 +340,29 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:
                                     "Groq AI WebDev",
                                     level=1,
                                     elem_style=dict(fontSize=24))
-                                antd.Typography.Text(
+                                
+                            # Model Selector
+                            with antd.Card(
+                                title="🤖 Select AI Model",
+                                size="small",
+                                elem_style=dict(marginBottom=16)):
+                                model_selector = antd.Select(
+                                    default_value=MODEL,
+                                    size="large",
+                                    elem_style=dict(width="100%"),
+                                    options=[
+                                        {
+                                            "label": model["name"],
+                                            "value": model["value"],
+                                        }
+                                        for model in AVAILABLE_MODELS
+                                    ]
+                                )
+                                selected_model_info = antd.Typography.Text(
                                     f"Powered by {MODEL}",
                                     type="secondary",
-                                    elem_style=dict(fontSize=12))
+                                    elem_style=dict(fontSize=12, display="block", marginTop=8))
+                                
                             # Input
                             input = antd.Input.Textarea(
                                 size="large",
@@ -545,6 +599,14 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:
                             "() => document.querySelector('#settings-area')")
     
     # Event Handlers
+    
+    # Model selector change event
+    model_selector.change(
+        fn=GradioEvents.update_model_info,
+        inputs=[model_selector],
+        outputs=[selected_model_info]
+    )
+    
     gr.on(fn=GradioEvents.close_modal,
           triggers=[usage_tour.close, usage_tour.finish],
           outputs=[usage_tour])
@@ -605,7 +667,7 @@ with gr.Blocks(title="Groq Coder", theme=theme, css=css) as demo:
     ).then(fn=GradioEvents.disable_btns([submit_btn, download_btn]),
            outputs=[submit_btn, download_btn]).then(
                fn=GradioEvents.generate_code,
-               inputs=[input, system_prompt_input, state],
+               inputs=[input, system_prompt_input, state, model_selector],
                outputs=[
                    output, state_tab, sandbox, download_content,
                    output_loading, state, suggestions_container
