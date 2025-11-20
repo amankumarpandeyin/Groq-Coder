@@ -2,9 +2,9 @@
 
 > **An intelligent, multi-model AI assistant that turns natural language into production-ready web applications in real-time**
 
-[![Demo](https://img.shields.io/badge/🎥_Demo-Watch_Video-blue)](YOUR_DEMO_LINK)
-[![Deploy](https://img.shields.io/badge/🚀_Deploy-Try_Live-green)](YOUR_LIVE_URL)
-[![GitHub](https://img.shields.io/badge/📦_Code-Repository-black)](YOUR_GITHUB_LINK)
+[![Demo](https://img.shields.io/badge/🎥_Demo-Watch_Video-blue)](https://drive.google.com/file/d/1_XGhzYzPuQf7WwRDQGur6igCPw67wM5P/view?usp=sharing)
+[![Deploy](https://img.shields.io/badge/🚀_Deploy-Try_Live-green)](https://groq-coder.onrender.com/)
+[![GitHub](https://img.shields.io/badge/📦_Code-Repository-black)](https://github.com/amankumarpandeyin/Groq-Coder)
 
 ![Groq AI WebDev](https://i.ibb.co/fYRyJNq0/Screenshot-from-2025-11-04-08-53-02.png)
 
