@@ -1,19 +1,46 @@
 import os
 import re
+import logging
+import hashlib
+import time
+from datetime import datetime, timedelta
+from functools import lru_cache
+from typing import Dict, List, Optional, Tuple
 import gradio as gr
 import modelscope_studio.components.antd as antd
 import modelscope_studio.components.base as ms
 import modelscope_studio.components.pro as pro
 from groq import Groq
-
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('/tmp/groq_webdev.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 if not GROQ_API_KEY:
+    logger.error("GROQ_API_KEY environment variable not set")
     raise ValueError("GROQ_API_KEY environment variable is not set")
 
-client = Groq(api_key=GROQ_API_KEY)
+logger.info("Groq AI WebDev initialized successfully")
 
-# Set default model
+client = Groq(api_key=GROQ_API_KEY)
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
+
+#security & validation parameters for Hushh People
+MAX_INPUT_LENGTH = 5000
+MAX_REQUEST_SIZE = 10000
+MIN_INPUT_LENGTH = 5
+REQUEST_TIMEOUT = 60
+RATE_LIMIT_REQUESTS = 50
+RATE_LIMIT_WINDOW = 3600
+request_cache: Dict[str, Tuple[str, float]] = {}
+CACHE_EXPIRY = 1800  # cache expiry time in seconds 30 minutes
+
+session_request_counts: Dict[str, List[float]] = {} 
 
 AVAILABLE_MODELS = [
     {
@@ -163,8 +190,54 @@ DEFAULT_THEME = {
         "colorPrimary": "#6A57FF",
     }
 }
+FRAMEWORK_CONFIG = {
+    'react': {
+        'name': 'React',
+        'template': 'react',
+        'description': 'React - Best for interactive UIs'
+    },
+    'nextjs': {
+        'name': 'Next.js',
+        'template': 'nextjs',
+        'description': 'Next.js - Full-stack React framework'
+    },
+    'vue': {
+        'name': 'Vue 3',
+        'template': 'vue',
+        'description': 'Vue - Progressive framework'
+    },
+    'svelte': {
+        'name': 'Svelte',
+        'template': 'svelte',
+        'description': 'Svelte - Compiler framework'
+    }
+}
 
-# React Imports
+# Component library configuration for production apps
+COMPONENT_LIBRARIES = {
+    'shadcn': {
+        'name': 'shadcn/ui',
+        'description': 'Beautifully designed components built with Radix',
+        'components': ['Button', 'Card', 'Input', 'Dialog', 'Select', 'Dropdown', 'Tabs'],
+    },
+    'daisyui': {
+        'name': 'daisyUI',
+        'description': 'Tailwind CSS components',
+        'components': ['Button', 'Card', 'Input', 'Modal', 'Navbar', 'Dropdown'],
+    },
+    'radix': {
+        'name': 'Radix UI',
+        'description': 'Unstyled, accessible components',
+        'components': ['Button', 'Dialog', 'Popover', 'Dropdown', 'Tooltip'],
+    },
+    'ant-design': {
+        'name': 'Ant Design',
+        'description': 'Enterprise-grade UI library',
+        'components': ['Button', 'Form', 'Table', 'Modal', 'Layout'],
+    }
+}
+
+# react imports for sandbox rendering
 react_imports = {
     "lucide-react": "https://esm.sh/lucide-react@0.525.0",
     "recharts": "https://esm.sh/recharts@3.1.0",
@@ -183,18 +256,162 @@ react_imports = {
     "react-dom/": "https://esm.sh/react-dom@^19.0.0/"
 }
 
+# agentic ai framework refinement history
+
+refinement_history: Dict[str, List[Dict]] = {}  # Track refinement iterations
+
+
+def detect_framework(prompt: str) -> str:
+    logger.info(f"Detecting framework for prompt length: {len(prompt)}")
+    
+    prompt_lower = prompt.lower()
+    if 'nextjs' in prompt_lower or 'next.js' in prompt_lower or 'pages' in prompt_lower or 'api route' in prompt_lower:
+        logger.info("Framework detected: Next.js")
+        return 'nextjs'
+    elif 'vue' in prompt_lower:
+        logger.info("Framework detected: Vue")
+        return 'vue'
+    elif 'svelte' in prompt_lower:
+        logger.info("Framework detected: Svelte")
+        return 'svelte'
+    elif 'html' in prompt_lower or 'vanilla' in prompt_lower or 'plain' in prompt_lower:
+        logger.info("Framework detected: HTML")
+        return 'html'
+    else:
+        logger.info("Framework detected: React (default)")
+        return 'react'
+
+
+def detect_component_library(prompt: str, framework: str) -> Optional[str]:
+    if framework == 'html':
+        return None
+    
+    prompt_lower = prompt.lower()
+    
+    if 'shadcn' in prompt_lower or 'shadcn/ui' in prompt_lower:
+        logger.info("Component library detected: shadcn/ui")
+        return 'shadcn'
+    elif 'daisy' in prompt_lower or 'daisyui' in prompt_lower:
+        logger.info("Component library detected: daisyUI")
+        return 'daisyui'
+    elif 'radix' in prompt_lower:
+        logger.info("Component library detected: Radix UI")
+        return 'radix'
+    elif 'ant' in prompt_lower or 'antd' in prompt_lower:
+        logger.info("Component library detected: Ant Design")
+        return 'ant-design'
+    
+    logger.info("No specific component library detected")
+    return None
+
+
+def generate_framework_hint(framework: str, lib: Optional[str]) -> str:
+    hint = f"\n[Framework: {FRAMEWORK_CONFIG.get(framework, {}).get('name', 'React')}"
+    if lib and lib in COMPONENT_LIBRARIES:
+        hint += f" + {COMPONENT_LIBRARIES[lib]['name']}"
+    hint += " - Generate code for this stack]\n"
+    return hint
+
+
+def add_to_refinement_history(session_id: str, iteration: int, code: str, feedback: str = ""):
+    if session_id not in refinement_history:
+        refinement_history[session_id] = []
+    
+    refinement_history[session_id].append({
+        'iteration': iteration,
+        'code': code,
+        'feedback': feedback,
+        'timestamp': time.time()
+    })
+    logger.info(f"Refinement iteration {iteration} saved for session {session_id}")
+
+
+@lru_cache(maxsize=128)
+def validate_input(input_text: str, max_length: int = MAX_INPUT_LENGTH) -> Tuple[bool, str]:
+
+    if not input_text:
+        return False, "Input cannot be empty"
+    
+    if len(input_text) < MIN_INPUT_LENGTH:
+        return False, f"Input must be at least {MIN_INPUT_LENGTH} characters"
+    
+    if len(input_text) > max_length:
+        return False, f"Input exceeds maximum length of {max_length} characters"
+    
+    # check for the potential prompt injection pattern
+    dangerous_patterns = [
+        r'system\s*:',
+        r'admin\s*:',
+        r'ignore.*previous',
+        r'forget.*all',
+        r'execute.*code'
+    ]
+    
+    for pattern in dangerous_patterns:
+        if re.search(pattern, input_text, re.IGNORECASE):
+            return False, "Input contains restricted patterns"
+    
+    return True, ""
+
+
+def get_request_hash(input_text: str, model: str, system_prompt: str) -> str:
+    combined = f"{input_text}:{model}:{system_prompt}"
+    return hashlib.md5(combined.encode()).hexdigest()
+
+
+def check_cache(request_hash: str) -> Optional[str]:
+    if request_hash in request_cache:
+        response, timestamp = request_cache[request_hash]
+        if time.time() - timestamp < CACHE_EXPIRY:
+            logger.info(f"Cache hit for request {request_hash}")
+            return response
+        else:
+            del request_cache[request_hash]
+    return None
+
+
+def cache_response(request_hash: str, response: str) -> None:
+    request_cache[request_hash] = (response, time.time())
+    logger.info(f"Cached response for {request_hash}")
+
+
+def check_rate_limit(session_id: str) -> Tuple[bool, str]:
+    current_time = time.time()
+    
+    if session_id not in session_request_counts:
+        session_request_counts[session_id] = []
+    
+    session_request_counts[session_id] = [
+        t for t in session_request_counts[session_id]
+        if current_time - t < RATE_LIMIT_WINDOW
+    ]
+    
+    if len(session_request_counts[session_id]) >= RATE_LIMIT_REQUESTS:
+        return False, f"Rate limit exceeded. Max {RATE_LIMIT_REQUESTS} requests per hour"
+    
+    session_request_counts[session_id].append(current_time)
+    return True, ""
+
+
+def sanitize_output(text: str) -> str:
+    dangerous_tags = ['<script', '<iframe', 'javascript:', 'onerror=', 'onload=']
+    sanitized = text
+    for tag in dangerous_tags:
+        sanitized = re.sub(tag, '', sanitized, flags=re.IGNORECASE)
+    return sanitized
+
 class GradioEvents:
 
     @staticmethod
     def generate_code(input_value, system_prompt_input_value, state_value, selected_model):
-        """Generate code with improved error handling and state management"""
         
         def get_generated_files(text):
-            """Extract code blocks from response"""
             patterns = {
                 'html': r'```html\n(.+?)\n```',
                 'jsx': r'```jsx\n(.+?)\n```',
                 'tsx': r'```tsx\n(.+?)\n```',
+                'vue': r'```vue\n(.+?)\n```',
+                'svelte': r'```svelte\n(.+?)\n```',
             }
             result = {}
 
@@ -208,13 +425,67 @@ class GradioEvents:
                 result["index.html"] = text.strip()
             return result
         
-        if not input_value or input_value.strip() == '':
+        #framwork library detection system work doing bro
+        detected_framework = detect_framework(input_value)
+        detected_library = detect_component_library(input_value, detected_framework)
+        framework_hint = generate_framework_hint(detected_framework, detected_library)
+        logger.info(f"Detected: {detected_framework} + {detected_library or 'default'}")
+        
+        is_valid, error_msg = validate_input(input_value)
+        if not is_valid:
+            logger.warning(f"Invalid input: {error_msg}")
             yield {
-                output: gr.update(value="⚠️ Please enter a description of what you want to create."),
+                output: gr.update(value=f"❌ {error_msg}"),
                 output_loading: gr.update(spinning=False),
                 state_tab: gr.update(active_key="empty"),
                 suggestions_container: gr.update(visible=False),
                 download_btn: gr.update(disabled=True)
+            }
+            return
+        session_id = str(id(state_value)) 
+        rate_ok, rate_msg = check_rate_limit(session_id)
+        if not rate_ok:
+            logger.warning(f"Rate limit exceeded for session {session_id}")
+            yield {
+                output: gr.update(value=f" {rate_msg}"),
+                output_loading: gr.update(spinning=False),
+                state_tab: gr.update(active_key="empty"),
+                suggestions_container: gr.update(visible=False),
+                download_btn: gr.update(disabled=True)
+            }
+            return
+        
+        #cahing mechanism fish
+        request_hash = get_request_hash(input_value, selected_model, system_prompt_input_value or SYSTEM_PROMPT)
+        cached_response = check_cache(request_hash)
+        
+        if cached_response:
+            logger.info("Returning cached response")
+            generated_files = get_generated_files(cached_response)
+            react_code = generated_files.get("index.tsx") or generated_files.get("index.jsx")
+            html_code = generated_files.get("index.html")
+            code_to_download = react_code or html_code
+            
+            yield {
+                output: gr.update(value=f"*Cached Response*\n\n{cached_response}"),
+                download_content: gr.update(value=code_to_download),
+                state_tab: gr.update(active_key="render"),
+                output_loading: gr.update(spinning=False),
+                sandbox: gr.update(
+                    template="react" if react_code else "html",
+                    imports=react_imports if react_code else {},
+                    value={
+                        "./index.tsx": """import Demo from './demo.tsx'
+import "@tailwindcss/browser"
+
+export default Demo
+""",
+                        "./demo.tsx": react_code
+                    } if react_code else {"./index.html": html_code}
+                ),
+                state: gr.update(value=state_value),
+                suggestions_container: gr.update(visible=True),
+                download_btn: gr.update(disabled=False if code_to_download else True)
             }
             return
 
@@ -228,7 +499,7 @@ class GradioEvents:
 
         messages = [{
             'role': "system",
-            "content": system_prompt_input_value or SYSTEM_PROMPT
+            "content": (system_prompt_input_value or SYSTEM_PROMPT) + framework_hint
         }] + state_value["history"]
 
         messages.append({'role': "user", 'content': input_value.strip()})
@@ -240,6 +511,8 @@ class GradioEvents:
                 break
 
         try:
+            logger.info(f"Generating code with model {selected_model} | Input length: {len(input_value)}")
+            
             completion = client.chat.completions.create(
                 model=selected_model,
                 messages=messages,
@@ -247,7 +520,8 @@ class GradioEvents:
                 max_completion_tokens=max_tokens,
                 top_p=1,
                 stream=True,
-                stop=None
+                stop=None,
+                timeout=REQUEST_TIMEOUT
             )
             
             response = ""
@@ -262,6 +536,10 @@ class GradioEvents:
                     }
                 
                 if chunk.choices[0].finish_reason == 'stop':
+                    response = sanitize_output(response)
+                    
+                    cache_response(request_hash, response)
+                    
                     state_value["history"] = messages + [{
                         'role': "assistant",
                         'content': response
@@ -272,6 +550,8 @@ class GradioEvents:
                     html_code = generated_files.get("index.html")
                     
                     code_to_download = react_code or html_code
+                    
+                    logger.info(f"Code generation successful | Template: {'React' if react_code else 'HTML'}")
                     
                     yield {
                         output: gr.update(value=response),
@@ -299,16 +579,18 @@ export default Demo
             error_type = type(e).__name__
             error_message = str(e)
             
+            logger.error(f"Error during code generation: {error_type} - {error_message}")
+            
             if "authentication" in error_message.lower() or "api key" in error_message.lower():
-                friendly_message = "🔐 **Authentication Error**: Invalid API key. Please check your Groq API key."
+                friendly_message = "**Authentication Error**: Invalid API key. Please check your Groq API key."
             elif "rate limit" in error_message.lower():
-                friendly_message = "⏱️ **Rate Limit**: Too many requests. Please wait a moment and try again."
+                friendly_message = "**Rate Limit**: Too many requests. Please wait a moment and try again."
             elif "timeout" in error_message.lower():
-                friendly_message = "⏰ **Timeout Error**: The request took too long. Please try again with a simpler prompt."
+                friendly_message = "**Timeout Error**: The request took too long. Please try again with a simpler prompt."
             elif "model" in error_message.lower():
-                friendly_message = f"🤖 **Model Error**: Issue with model '{selected_model}'. Try selecting a different model."
+                friendly_message = f"**Model Error**: Issue with model '{selected_model}'. Try selecting a different model."
             else:
-                friendly_message = f"❌ **Error ({error_type})**: {error_message}"
+                friendly_message = f"**Error ({error_type})**: {error_message}"
             
             yield {
                 output: gr.update(value=friendly_message),
@@ -320,22 +602,20 @@ export default Demo
 
     @staticmethod
     def new_project(state_value):
-        """Start a new project by clearing history and resetting UI"""
         state_value["history"] = []
         return [
-            gr.update(value=state_value),  # state
-            gr.update(value=""),  # input
-            gr.update(active_key="empty"),  # state_tab
-            gr.update(value=None),  # sandbox
-            gr.update(visible=False),  # suggestions_container
-            gr.update(disabled=True),  # download_btn
-            gr.update(value=""),  # output
-            gr.update(value=""),  # download_content
+            gr.update(value=state_value),
+            gr.update(value=""),
+            gr.update(active_key="empty"),
+            gr.update(value=None),
+            gr.update(visible=False),
+            gr.update(disabled=True),
+            gr.update(value=""),
+            gr.update(value=""),
         ]
 
     @staticmethod
     def update_model_info(selected_model):
-        """Update model info text when model is changed"""
         for model in AVAILABLE_MODELS:
             if model["value"] == selected_model:
                 return gr.update(value=f"📊 {model['description']} | Max tokens: {model['max_tokens']}")
@@ -391,11 +671,88 @@ export default Demo
     
     @staticmethod
     def validate_and_prepare_input(input_value):
-        """Validate input before submission"""
-        if not input_value or len(input_value.strip()) < 10:
-            gr.Warning("Please provide a more detailed description (at least 10 characters).")
+        is_valid, error_msg = validate_input(input_value)
+        if not is_valid:
+            gr.Warning(error_msg)
             return False
+        logger.info(f"Input validation passed | Length: {len(input_value)}")
         return True
+
+    @staticmethod
+    def refine_code(refinement_prompt, current_code, state_value, selected_model, system_prompt_input_value):
+        """Multi-step code refinement with context memory (NEW 2025 Feature)."""
+        logger.info(f"Starting code refinement iteration")
+        session_id = str(id(state_value))
+        
+        if not refinement_prompt or refinement_prompt.strip() == '':
+            gr.Warning("Please provide refinement instructions")
+            return {"output": gr.update(value="No refinement prompt provided")}
+        
+        # get the refinement iteration count
+        iteration = len(refinement_history.get(session_id, [])) + 1
+        
+        yield {
+            "output": gr.update(value=f"✨ Refining (iteration {iteration})...\n\nAnalyzing current code...\n✓ Selecting improvements...\n⏳ Generating refined code..."),
+            "output_loading": gr.update(spinning=True),
+        }
+        
+        # Create refinement context
+        refinement_context = f"""
+[Refinement Mode - Iteration {iteration}]
+Current Code:
+```
+{current_code[:500]}... [truncated]
+```
+
+Refinement Request: {refinement_prompt}
+
+Task: Refine the code based on the user's request while maintaining functionality.
+"""
+        
+        messages = [{
+            'role': "system",
+            "content": system_prompt_input_value or SYSTEM_PROMPT
+        }, {
+            'role': "user",
+            "content": refinement_context
+        }] + state_value.get("history", [])
+        
+        try:
+            completion = client.chat.completions.create(
+                model=selected_model,
+                messages=messages,
+                temperature=1,
+                max_completion_tokens=8192,
+                top_p=1,
+                stream=True,
+                stop=None,
+                timeout=REQUEST_TIMEOUT
+            )
+            
+            refined_code = ""
+            for chunk in completion:
+                if chunk.choices[0].delta.content:
+                    refined_code += chunk.choices[0].delta.content
+                    yield {
+                        "output": gr.update(value=refined_code),
+                        "output_loading": gr.update(spinning=False),
+                    }
+            
+            # Store refinement history
+            add_to_refinement_history(session_id, iteration, refined_code, refinement_prompt)
+            logger.info(f"Code refinement iteration {iteration} completed successfully")
+            
+            yield {
+                "output": gr.update(value=refined_code),
+                "output_loading": gr.update(spinning=False),
+            }
+            
+        except Exception as e:
+            logger.error(f"Error during refinement: {type(e).__name__} - {str(e)}")
+            yield {
+                "output": gr.update(value=f"❌ Refinement Error: {str(e)}"),
+                "output_loading": gr.update(spinning=False),
+            }
 
 css = """
 #coder-artifacts .output-empty,.output-loading {
@@ -497,7 +854,7 @@ css = """
 theme = gr.themes.Default()
 
 with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
-    # Global State
+    #global state
     state = gr.State({"system_prompt": SYSTEM_PROMPT, "history": []})
     
     with ms.Application(elem_id="coder-artifacts") as app:
@@ -515,7 +872,7 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                            vertical=True,
                                            gap="middle"):
                                 antd.Image(
-                                    "https://i.ibb.co/7Nd1sKyJ/Screenshot-from-2025-11-05-00-06-14.png",
+                                    "https://i.ibb.co/7Nd1sKyJ/Screenshot-from-2025-11-05-00-06-14.png", # Groq AI Logo TELE ceo
                                     width=200,
                                     height=200,
                                     preview=False)
@@ -524,9 +881,9 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                     level=1,
                                     elem_style=dict(fontSize=24))
                                 
-                            # Model Selection Card
+                            
                             with antd.Card(
-                                title="🤖 Select AI Model",
+                                title=" Select AI Model",
                                 size="small",
                                 elem_style=dict(marginBottom=16)):
                                 model_selector = antd.Select(
@@ -541,7 +898,7 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                         for model in AVAILABLE_MODELS
                                     ]
                                 )
-                                # Get default model description
+                                
                                 default_model_desc = next(
                                     (m['description'] for m in AVAILABLE_MODELS if m['value'] == DEFAULT_MODEL),
                                     "Powered by AI"
@@ -555,6 +912,47 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                     f"📊 {default_model_desc} | Max tokens: {default_model_tokens}",
                                     type="secondary",
                                     elem_style=dict(fontSize=12, display="block", marginTop=8))
+                            
+                            # NEW: Framework & Component Library Selection (2025 Feature)
+                            with antd.Card(
+                                title="🎨 Framework & Libraries",
+                                size="small",
+                                elem_style=dict(marginBottom=16)):
+                                with antd.Flex(gap="small", vertical=False):
+                                    framework_selector = antd.Select(
+                                        default_value="react",
+                                        size="middle",
+                                        placeholder="Select framework (auto-detected)",
+                                        elem_style=dict(flex=1),
+                                        options=[
+                                            {
+                                                "label": f"{fw['name']}",
+                                                "value": fw_key,
+                                            }
+                                            for fw_key, fw in FRAMEWORK_CONFIG.items()
+                                        ]
+                                    )
+                                    
+                                    library_selector = antd.Select(
+                                        default_value="none",
+                                        size="middle",
+                                        placeholder="Component library (optional)",
+                                        elem_style=dict(flex=1),
+                                        options=[
+                                            {"label": "None", "value": "none"}
+                                        ] + [
+                                            {
+                                                "label": lib_config['name'],
+                                                "value": lib_key,
+                                            }
+                                            for lib_key, lib_config in COMPONENT_LIBRARIES.items()
+                                        ]
+                                    )
+                                
+                                antd.Typography.Text(
+                                    "💡 Tip: Auto-detected from your description • Select manually if needed",
+                                    type="secondary",
+                                    elem_style=dict(fontSize=11, display="block", marginTop=8))
                                 
                             input = antd.Input.Textarea(
                                 size="large",
@@ -575,7 +973,7 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                                        color="default",
                                                        size="small")
                             
-                            # NEW: Action Buttons Row with Generate and New Project
+                            
                             with antd.Flex(gap="small", elem_style=dict(width="100%")):
                                 submit_btn = antd.Button(
                                     "🚀 Generate Code",
@@ -589,6 +987,31 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                     size="large",
                                     elem_classes="new-project-btn",
                                     elem_style=dict(flex=1))
+
+                            # NEW: Code Refinement Section (2025 Feature)
+                            antd.Divider("Refinement")
+                            
+                            with antd.Card(
+                                title="🔧 Refine Generated Code",
+                                size="small",
+                                elem_style=dict(marginBottom=16)):
+                                refinement_input = antd.Input.Textarea(
+                                    size="middle",
+                                    allow_clear=True,
+                                    auto_size=dict(minRows=2, maxRows=4),
+                                    placeholder="E.g., 'Add dark mode toggle', 'Make buttons larger', 'Change color scheme'...",
+                                    elem_id="refinement-input")
+                                
+                                refine_btn = antd.Button(
+                                    "✨ Refine Code",
+                                    type="default",
+                                    size="middle",
+                                    elem_style=dict(width="100%", marginTop=8))
+                                
+                                antd.Typography.Text(
+                                    "💡 Provide specific refinement instructions to improve the generated code",
+                                    type="secondary",
+                                    elem_style=dict(fontSize=11, display="block", marginTop=8))
 
                             antd.Divider("Settings")
 
@@ -609,7 +1032,7 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
 
                             antd.Divider("Examples")
 
-                            # Examples
+                            
                             with antd.Flex(gap="small", wrap=True):
                                 for example in EXAMPLES:
                                     with antd.Card(
@@ -624,7 +1047,7 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                         fn=GradioEvents.select_example(example),
                                         outputs=[input])
 
-                    # Right Column
+                    
                     with antd.Col(span=24, md=16):
                         with antd.Card(
                                 title="✨ Output Preview",
@@ -647,7 +1070,7 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                         size="small"
                                     )
                             
-                            # Hidden component for download content
+                            
                             download_content = gr.Text(visible=False)
                             
                             with antd.Tabs(
@@ -675,7 +1098,7 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                         template="html",
                                     )
                         
-                        # AI Suggestions Panel
+                        
                         with ms.Div(visible=False) as suggestions_container:
                             with antd.Card(
                                 title="✨ AI Enhancement Suggestions",
@@ -734,7 +1157,7 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                                 show_icon=True):
                                 pass
 
-                    # Modals and Drawers
+                    
                     with antd.Modal(open=False,
                                     title="⚙️ System Prompt Configuration",
                                     width="800px") as system_prompt_modal:
@@ -811,14 +1234,14 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
                             get_target=
                             "() => document.querySelector('#settings-area')")
     
-    # Event Handlers
+    # event handlers
     model_selector.change(
         fn=GradioEvents.update_model_info,
         inputs=[model_selector],
         outputs=[selected_model_info]
     )
     
-    # NEW: New Project Button Event Handlers
+    # new project button event handlers
     new_project_btn.click(
         fn=GradioEvents.open_modal,
         outputs=[new_project_modal]
@@ -921,6 +1344,13 @@ with gr.Blocks(title="Groq AI WebDev Coder", theme=theme, css=css) as demo:
         fn=GradioEvents.enable_btns([submit_btn]),
         outputs=[submit_btn]
     )
+    
+    # refinement bro 2025
+    refine_btn.click(
+        fn=GradioEvents.refine_code,
+        inputs=[refinement_input, output, state, model_selector, system_prompt_input],
+        outputs=[output, output_loading]
+    )
 
 if __name__ == "__main__":
     import os
@@ -935,3 +1365,4 @@ if __name__ == "__main__":
         ssr_mode=False,
         max_threads=100
     )
+# end of file app.py    
